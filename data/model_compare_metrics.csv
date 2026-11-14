@@ -1,0 +1,4 @@
+Method,Daily error %,Weekly error %,Monthly error %
+LightGBM,7.4,6.0,4.6
+Prophet,6.2,5.0,4.3
+Same day last year,10.4,8.5,7.0

@@ -1,3 +1,3 @@
 Method,Daily error %,Monthly error %
-LightGBM (calendar + events only),8.4,6.5
+LightGBM (calendar + events only),7.4,4.6
 Same day last year (simple guess),10.4,7.0

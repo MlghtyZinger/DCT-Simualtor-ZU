@@ -67,17 +67,27 @@ st.title("✈️ Flight → Hotel Guest Simulator · Abu Dhabi")
 st.caption("What happens to hotel guest nights if flights change? Baseline = our forecast for Aug 2025 – Feb 2026. "
            "Every step of the chain is visible and adjustable.")
 
-_names = ["🎛️ Scenario simulator", "📊 Market overview"] + (["📈 Time-series forecast"] if ts_view else []) + ["ℹ️ Method & limits"]
+import admin_views as av
+
+_names = (["🎛️ Scenario simulator", "📈 LightGBM forecast", "⚖️ LightGBM vs Prophet", "📊 Market overview",
+           "✈️ Flight fullness", "👥 Visitor profiles"]
+          + (["📉 Prophet detail (comparison)"] if ts_view else []) + ["ℹ️ Method & limits"])
 _tabs = st.tabs(_names)
-tab_sim, tab_over, tab_notes = _tabs[0], _tabs[1], _tabs[-1]
+tab_sim, tab_over, tab_notes = _tabs[0], _tabs[3], _tabs[-1]
+for _tab, _fn in [(_tabs[1], av.render_forecast), (_tabs[2], av.render_compare),
+                  (_tabs[4], av.render_flights), (_tabs[5], av.render_profiles)]:
+    with _tab:
+        try:
+            _fn()
+        except Exception as e:
+            st.warning(f"This tab could not load: {e}")
 if ts_view:
-    with _tabs[2]:
+    with _tabs[6]:
         try:
             ts_view.render()
         except Exception as e:
             st.warning(f"Time-series tab could not load: {e}")
 
-# =========================================================================== SIMULATOR
 with tab_sim:
     mode = st.radio("What do you want to test?",
                     ["Change an existing route", "Open a new route / add flights from a country"],
