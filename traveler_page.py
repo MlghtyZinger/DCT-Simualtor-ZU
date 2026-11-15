@@ -127,8 +127,70 @@ def next_months(n=12):
 st.title("🧳 Plan your Abu Dhabi trip")
 st.caption("🟢 **Go** – quiet and comfortable · 🟡 **Okay** – a bit busy or warm · 🔴 **Skip** – busy and hot, or over 40°C")
 
-tab_dates, tab_cal, tab_best, tab_ask = st.tabs(
-    ["📅 Check my dates", "🗓️ Calendar", "⭐ Best times", "💬 Ask a question"])
+tab_dates, tab_sugg, tab_cal, tab_best, tab_ask = st.tabs(
+    ["📅 Check my dates", "🎯 Trip suggester", "🗓️ Calendar", "⭐ Best times", "💬 Ask a question"])
+
+# Trip suggester: show a words-only flight tip for the home country (no numbers).
+# Set to False to hide it if DCT flight data should not be used on the public side.
+SHOW_FLIGHT_TIP = True
+
+
+@st.cache_data
+def flight_months():
+    """Per departure country: months when flights to Abu Dhabi are usually emptiest / fullest."""
+    try:
+        f = pd.read_csv(DATA / "flight_country_monthly.csv")
+    except Exception:
+        return {}
+    f = f[f.Month.str[:4].astype(int) >= 2023]
+    f["M"] = f.Month.str[5:7].astype(int)
+    out = {}
+    for c, g in f.groupby("Country"):
+        if g.Seats.sum() / g.Month.nunique() < 3000:   # too few flights to say anything
+            continue
+        lf = g.groupby("M").PAX.sum() / g.groupby("M").Seats.sum()
+        if len(lf) >= 10:
+            out[c] = (lf.nsmallest(3).index.tolist(), lf.nlargest(3).index.tolist())
+    return out
+
+
+def suggest_windows(month: int, nights: int, top: int = 3):
+    y = TODAY.year if month >= TODAY.month else TODAY.year + 1
+    first = date(y, month, 1)
+    if first > END:
+        return y, []
+    mend = (pd.Timestamp(first) + pd.offsets.MonthEnd(0)).date()
+    lo = max(first - timedelta(days=5), TODAY + timedelta(days=1))
+    hi = min(mend, END - timedelta(days=nights - 1))
+    if lo > hi:
+        return y, []
+    days = build_days(lo, hi + timedelta(days=nights - 1))
+    busy_events = {"Eid al-Fitr", "Eid al-Adha", "UAE National Day", "Abu Dhabi Grand Prix (F1)", "New Year"}
+    pts = (days.Verdict.map({"Go": 0, "Okay": 1, "Skip": 2}) + days.Busy.map({"Quiet": 0, "Average": 0.3, "Busy": 0.6})
+           + days.Event.isin(busy_events) * 0.8)   # crowded holidays count against a window
+    cands = []
+    for s in pd.date_range(lo, hi):
+        w = days.loc[s: s + pd.Timedelta(days=nights - 1)]
+        cands.append((pts.loc[w.index].mean() + abs((s.date() - first).days) * 0.002, s, w))
+    cands.sort(key=lambda c: c[0])
+    picks = []
+    for sc, s, w in cands:
+        if all(abs((s - p[1]).days) >= max(3, nights) for p in picks):
+            picks.append((sc, s, w))
+        if len(picks) == top:
+            break
+    return y, sorted([(s, w) for _, s, w in picks], key=lambda p: p[0])
+
+
+def window_reason(w: pd.DataFrame) -> str:
+    busy = w.Busy.value_counts(normalize=True)
+    crowd = ("mostly quiet" if busy.get("Quiet", 0) >= 0.5 else
+             "some busy days" if busy.get("Busy", 0) >= 0.3 else "normal crowds")
+    hi = f"{w.High.min()}°C" if w.High.min() == w.High.max() else f"{w.High.min()}–{w.High.max()}°C"
+    ev = sorted({e for e in w.Event if e})
+    sch = sorted({s for s in w.School if s})
+    extra = ("includes " + ", ".join(ev)) if ev else (sch[0] + " (approx.)") if sch else "no major holidays"
+    return f"{crowd.capitalize()}, highs {hi}, {extra}."
 
 # 1. check my dates -----------------------------------------------------------------------
 with tab_dates:
@@ -158,6 +220,41 @@ with tab_dates:
         st.caption("Hover a day for details.")
     else:
         st.info("Pick a start date and an end date.")
+
+# 1b. trip suggester ------------------------------------------------------------------------
+with tab_sugg:
+    st.markdown("Tell us a little about your trip and we'll suggest the best dates.")
+    fm = flight_months()
+    with st.form("suggester"):
+        c = st.columns(3)
+        home = c[0].selectbox("Home country", ["Other / prefer not to say"] + sorted(fm),
+                              help="Used only to add a tip about flights from your country.")
+        pref = c[1].selectbox("Preferred month", MONTHS, index=TODAY.month % 12)
+        nights = c[2].number_input("Trip length (nights)", 1, 21, 5)
+        sent = st.form_submit_button("Suggest dates", type="primary")
+    if sent or "sugg_shown" in st.session_state:
+        st.session_state.sugg_shown = True
+        m = MONTHS.index(pref) + 1
+        y, wins = suggest_windows(m, int(nights))
+        if not wins:
+            st.warning("I can only plan up to the end of 2027 – please pick another month.")
+        else:
+            st.markdown(f"### Best dates around {pref} {y}")
+            for i, (s, w) in enumerate(wins, 1):
+                v = overall(w)
+                e = s + pd.Timedelta(days=int(nights) - 1)
+                st.markdown(f"**{i}. {ICON[v]} {s:%a %d %b} → {e:%a %d %b %Y}** — {window_reason(w)}")
+            if all(overall(w) == "Skip" for _, w in wins):
+                st.info("This month is busy and/or very hot. See ⭐ Best times for better months.")
+            if SHOW_FLIGHT_TIP and home in fm:
+                empt, full = fm[home]
+                name = lambda ms: ", ".join(MONTHS[x - 1] for x in sorted(ms))
+                tip = f"✈️ Flights from **{home}** are usually emptiest in {name(empt)} and fullest in {name(full)} (past years)."
+                if m in full:
+                    tip += f" {pref} is a full month – book flights early."
+                st.markdown(tip)
+            st.caption("Suggestions are based on our crowd forecast and the weather – a guide, not a guarantee. "
+                       "No prices are included.")
 
 # 2. calendar -----------------------------------------------------------------------------
 with tab_cal:
