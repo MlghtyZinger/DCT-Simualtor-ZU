@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import requests
 import streamlit as st
 
-from calendar_ad import NOTES, LAST_DAY
+from calendar_ad import NOTES, LAST_DAY, MAJOR, SHORT, LONG, events_on
 
 DATA = Path(__file__).parent / "data"
 LAT, LON = 24.45, 54.38  # Abu Dhabi
@@ -77,6 +77,11 @@ def build_days(start, end) -> pd.DataFrame:
         else:
             hi.append(TYPICAL[d.month][0]); lo.append(TYPICAL[d.month][1]); src.append("typical")
     f["High"], f["Low"], f["WeatherSource"] = [round(x) for x in hi], [round(x) for x in lo], src
+    f["Events"] = [events_on(d) for d in f.index]                       # all holidays + events that day
+    f["Event"] = f.Events.map(", ".join)
+    f["Major"] = f.Events.map(lambda ev: any(e in MAJOR for e in ev))
+    f.loc[f.Major, "Busy"] = "Busy"                                     # big events fill hotels
+    f["Label"] = f.Events.map(lambda ev: " + ".join(dict.fromkeys(SHORT.get(e, e) for e in ev if e not in LONG)))
     busy_pts = f.Busy.map({"Quiet": 0, "Average": 1, "Busy": 2})
     heat_pts = pd.cut(f.High, [-99, 32, 36, 40, 99], labels=[0, 1, 2, 4]).astype(int)
     score = busy_pts + heat_pts
@@ -92,9 +97,26 @@ def _reason(r):
     parts = [busy, f"{r.Weather.lower()} ({r.High}°C)"]
     if r.Event:
         parts.append(r.Event)
-    elif r.School:
+    if r.School:
         parts.append(r.School + " (approx.)")
     return " · ".join(parts)
+
+
+def event_names(days: pd.DataFrame) -> list:
+    """Every holiday/event in these days, in order of first appearance."""
+    return list(dict.fromkeys(e for ev in days.Events for e in ev))
+
+
+def spans(days: pd.DataFrame, name: str) -> str:
+    """'01 Dec – 03 Dec, 09 Dec – 17 Dec' for the days an event is on."""
+    on = [d for d, e in days.Events.items() if name in e]
+    out, start, prev = [], on[0], on[0]
+    for d in on[1:] + [None]:
+        if d is None or (d - prev).days > 1:
+            out.append(f"{start:%d %b}" if start == prev else f"{start:%d %b} – {prev:%d %b}")
+            start = d
+        prev = d if d is not None else prev
+    return ", ".join(out)
 
 
 def overall(days: pd.DataFrame) -> str:
@@ -165,9 +187,8 @@ def suggest_windows(month: int, nights: int, top: int = 3):
     if lo > hi:
         return y, []
     days = build_days(lo, hi + timedelta(days=nights - 1))
-    busy_events = {"Eid al-Fitr", "Eid al-Adha", "UAE National Day", "Abu Dhabi Grand Prix (F1)", "New Year"}
     pts = (days.Verdict.map({"Go": 0, "Okay": 1, "Skip": 2}) + days.Busy.map({"Quiet": 0, "Average": 0.3, "Busy": 0.6})
-           + days.Event.isin(busy_events) * 0.8)   # crowded holidays count against a window
+           + days.Major * 0.8)   # big holidays/events that fill hotels count against a window
     cands = []
     for s in pd.date_range(lo, hi):
         w = days.loc[s: s + pd.Timedelta(days=nights - 1)]
@@ -187,10 +208,18 @@ def window_reason(w: pd.DataFrame) -> str:
     crowd = ("mostly quiet" if busy.get("Quiet", 0) >= 0.5 else
              "some busy days" if busy.get("Busy", 0) >= 0.3 else "normal crowds")
     hi = f"{w.High.min()}°C" if w.High.min() == w.High.max() else f"{w.High.min()}–{w.High.max()}°C"
-    ev = sorted({e for e in w.Event if e})
+    ev = event_names(w)
     sch = sorted({s for s in w.School if s})
     extra = ("includes " + ", ".join(ev)) if ev else (sch[0] + " (approx.)") if sch else "no major holidays"
     return f"{crowd.capitalize()}, highs {hi}, {extra}."
+
+@st.cache_data
+def all_countries():
+    try:
+        return [x.strip() for x in (DATA / "countries.txt").read_text(encoding="utf-8").splitlines() if x.strip()]
+    except Exception:
+        return sorted(flight_months())
+
 
 # 1. check my dates -----------------------------------------------------------------------
 with tab_dates:
@@ -208,16 +237,28 @@ with tab_dates:
                     + (" (live forecast)" if (days.WeatherSource == "forecast").all() else
                        " (live forecast for the next 2 weeks, typical weather after)"
                        if (days.WeatherSource == "forecast").any() else " (typical for this time of year)"))
-        notes = sorted({n for n in list(days.Event) + list(days.School) if n})
-        for n in notes:
-            st.info(NOTES[n])
         strip = go.Figure(go.Bar(x=days.index, y=[1] * len(days), marker_color=days.Verdict.map(COLOR),
+                                 text=days.Label, textposition="inside", insidetextanchor="middle",
+                                 textangle=-90 if len(days) > 7 else 0,
+                                 textfont=dict(color="#111111", size=13), cliponaxis=False,
                                  customdata=days[["Verdict", "Reason"]],
                                  hovertemplate="%{x|%a %d %b}<br><b>%{customdata[0]}</b><br>%{customdata[1]}<extra></extra>"))
-        strip.update_layout(height=140, margin=dict(t=5, b=5, l=5, r=5), yaxis_visible=False,
+        strip.update_layout(height=260, margin=dict(t=5, b=5, l=5, r=5), yaxis_visible=False,
+                            uniformtext=dict(minsize=9, mode="show"),
                             bargap=0.08, xaxis=dict(tickformat="%a %d %b", dtick=86400000.0 if len(days) <= 21 else 7 * 86400000.0))
         st.plotly_chart(strip, width="stretch")
-        st.caption("Hover a day for details.")
+        st.caption("Holidays and events are written on the days they happen. Hover a day for more details.")
+        notes = event_names(days)
+        sch = list(dict.fromkeys(s for s in days.School if s))
+        short_ev = [n for n in notes if n not in LONG]
+        long_ev = [n for n in notes if n in LONG]
+        if short_ev:
+            st.markdown("**Holidays and events on your dates**\n\n" +
+                        "\n".join(f"- **{spans(days, n)}:** {NOTES[n]}" for n in short_ev))
+        if long_ev or sch:
+            st.markdown("**Also running during your trip**\n\n" +
+                        "\n".join([f"- **{spans(days, n)}:** {NOTES[n]}" for n in long_ev] +
+                                  [f"- {NOTES[s]}" for s in sch]))
     else:
         st.info("Pick a start date and an end date.")
 
@@ -227,8 +268,8 @@ with tab_sugg:
     fm = flight_months()
     with st.form("suggester"):
         c = st.columns(3)
-        home = c[0].selectbox("Home country", ["Other / prefer not to say"] + sorted(fm),
-                              help="Used only to add a tip about flights from your country.")
+        home = c[0].selectbox("Home country", ["Prefer not to say"] + all_countries(),
+                              help="Used only to add a tip about flights from your country, when we have flight data for it.")
         pref = c[1].selectbox("Preferred month", MONTHS, index=TODAY.month % 12)
         nights = c[2].number_input("Trip length (nights)", 1, 21, 5)
         sent = st.form_submit_button("Suggest dates", type="primary")
@@ -280,30 +321,41 @@ with tab_cal:
                       xaxis=dict(tickformat="%d %b", title="Week starting"))
     st.plotly_chart(fig, width="stretch")
     st.caption("🟢 Go · 🟡 Okay · 🔴 Skip — hover a day to see why.")
-    ev = cal[cal.Event != ""].groupby("Event").apply(lambda g: (g.index.min(), g.index.max()))
-    if len(ev):
+    ev = {n: (min(d for d, e in cal.Events.items() if n in e), max(d for d, e in cal.Events.items() if n in e))
+          for n in event_names(cal)}
+    if ev:
         st.markdown("**Holidays and events in this period**")
-        for name, (a, b) in sorted(ev.items(), key=lambda x: x[1][0]):
-            when = f"{a:%d %b}" + ("" if a == b else f" – {b:%d %b %Y}")
-            st.markdown(f"- **{when}:** {NOTES[name]}")
+        st.markdown("\n".join(f"- **{spans(cal, name)}:** {NOTES[name]}"
+                               for name, _ in sorted(ev.items(), key=lambda x: x[1][0])))
 
 # 3. best times ---------------------------------------------------------------------------
 with tab_best:
+    NEXT = TODAY.year + 1
     rows = []
-    for m, y in next_months(12):
-        md = month_days(m, y)
+    for m in range(1, 13):
+        md = month_days(m, NEXT)
         if md is None:
             continue
-        vc = md.Verdict.value_counts(normalize=True)
-        rows.append({"Month": f"{MONTHS[m-1]} {y}", "Verdict": overall(md), "Go": vc.get("Go", 0),
-                     "High": int(md.High.mean()),
-                     "Events": ", ".join(sorted({e for e in md.Event if e})) or "—"})
+        names = event_names(md)
+        big = [n for n in names if n in MAJOR]
+        rows.append({"Month": f"{MONTHS[m-1]} {NEXT}", "M": m, "Verdict": overall(md),
+                     "Go": md.Verdict.eq("Go").mean(), "High": int(round(md.High.mean())),
+                     "Big": big, "Events": ", ".join(dict.fromkeys(SHORT.get(n, n) for n in names)) or "—"})
     bt = pd.DataFrame(rows)
-    best = bt.sort_values("Go", ascending=False).head(3)
-    st.markdown("### Best months in the next year")
+    # best = coolest weather first; months packed with big events (3 or more) are left out
+    best = bt[bt.Big.map(len) < 3].sort_values(["High", "Go"], ascending=[True, False]).head(3)
+    st.markdown(f"### Best months in {NEXT}")
+    st.caption("Chosen for the most pleasant weather, leaving out months packed with big events.")
     for r in best.itertuples():
-        st.markdown(f"{ICON[r.Verdict]} **{r.Month}** – about {r.High}°C, {r.Go:.0%} of days are a Go")
-    st.markdown("### Month by month")
+        why = f"about {r.High}°C, pleasant weather"
+        if r.Big:
+            why += f"; busy during {', '.join(SHORT.get(b, b) for b in r.Big)} – book early"
+        st.markdown(f"{ICON[r.Verdict]} **{r.Month}** – {why}")
+    crowded = bt[bt.Big.map(len) >= 3]
+    for r in crowded.itertuples():
+        st.info(f"**{r.Month}** also has good weather (about {r.High}°C), but {', '.join(SHORT.get(b, b) for b in r.Big)} "
+                "make it one of the busiest months.")
+    st.markdown(f"### Month by month, {NEXT}")
     st.dataframe(bt.assign(Verdict=bt.Verdict.map(lambda v: f"{ICON[v]} {v}"),
                            High=bt.High.map(lambda x: f"{x}°C"))[["Month", "Verdict", "High", "Events"]]
                  .rename(columns={"High": "Typical high"}), hide_index=True, width="stretch")
@@ -320,7 +372,7 @@ def answer(q: str) -> str:
         if md is None:
             return "I can only plan up to the end of 2027."
         v = overall(md)
-        evs = sorted({e for e in md.Event if e})
+        evs = event_names(md)
         return (f"{ICON[v]} **{MONTHS[month-1]} {y}: {v}.** Typical highs around {int(md.High.mean())}°C. "
                 f"{md.Verdict.eq('Go').mean():.0%} of days are a Go and {md.Busy.eq('Busy').mean():.0%} are busy. "
                 + (f"Includes: {', '.join(evs)}." if evs else "No major holidays."))
@@ -328,21 +380,30 @@ def answer(q: str) -> str:
         return ("**Ramadan** (about 18 Feb – 19 Mar 2026 and 8 Feb – 9 Mar 2027) is usually calmer in hotels. "
                 "**Eid** holidays right after are busy. Dates depend on the moon, so they can move by a day or two.")
     if any(k in t for k in ["f1", "grand prix", "formula"]):
-        return "The **Abu Dhabi Grand Prix** is 4–6 Dec 2026. Hotels are busy, especially around Yas Island – book early or pick another week."
+        return ("The **Abu Dhabi Grand Prix** is 3–6 Dec 2026 and 10–12 Dec 2027. Hotels are busy, especially around "
+                "Yas Island – book early or pick another week.")
+    if any(k in t for k in ["event", "festival", "what's on", "whats on", "happening"]):
+        up = build_days(TODAY, min(TODAY + timedelta(days=90), END))
+        names = event_names(up)
+        if not names:
+            return "No major events in the next 3 months."
+        return "Coming up in the next 3 months: " + "; ".join(
+            f"**{n}** (from {min(d for d, e in up.Events.items() if n in e):%d %b})" for n in names) + "."
     if any(k in t for k in ["weather", "hot", "temperature", "cool", "heat"]):
         return ("Most pleasant: **November to March** (about 24–31°C). June to September is very hot (40°C+). "
                 "Check my dates shows the live forecast for the next 2 weeks.")
     if any(k in t for k in ["crowd", "busy", "quiet", "peak", "avoid"]):
         return ("Usually quieter: **Ramadan and the summer months**, and Sundays. Busier: **Eid, National Day, "
                 "the F1 weekend, New Year** and Fri–Sat weekends. Use the Calendar tab for exact days.")
-    good = pd.DataFrame(rows).sort_values("Go", ascending=False).head(3).Month.tolist() if rows else []
-    return ("Best balance of quiet and good weather in the next year: **" + ", ".join(good) + "**. "
-            "Ask me about a month (\"How is March?\"), Ramadan, the F1, crowds or weather.")
+    good = best.Month.tolist() if len(best) else []
+    return ("Best months next year for pleasant weather: **" + ", ".join(good) + "**. "
+            "December is lovely too but very busy (National Day, F1, New Year). "
+            "Ask me about a month (\"How is March?\"), events, Ramadan, the F1, crowds or weather.")
 
 
 with tab_ask:
     st.caption("Simple answers from our forecast and the weather. Try: *When is the best time to visit?* · "
-               "*How is March?* · *Will it be crowded in December?* · *Ramadan* · *Weather*")
+               "*How is March?* · *What's on?* · *Will it be crowded in December?* · *Ramadan* · *Weather*")
     if "chat" not in st.session_state:
         st.session_state.chat = [("assistant", "Hi! Ask me when to visit Abu Dhabi.")]
     box = st.container()
