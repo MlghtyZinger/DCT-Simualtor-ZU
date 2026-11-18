@@ -61,7 +61,7 @@ SHORT = {
     "Ramadan": "Ramadan", "Eid al-Fitr": "Eid", "Eid al-Adha": "Eid", "UAE National Day": "National Day",
     "Abu Dhabi Grand Prix (F1)": "F1", "New Year": "New Year", "Abu Dhabi Festival": "AD Festival",
     "Frieze Abu Dhabi (art fair)": "Frieze", "Mother of the Nation Festival": "MOTN Festival",
-    "Culture Summit Abu Dhabi": "Culture Summit", "Guggenheim Abu Dhabi opening": "Guggenheim opening",
+    "Culture Summit Abu Dhabi": "Culture Summit", "Guggenheim Abu Dhabi opening": "Guggenheim",
     "Liwa International Festival": "Liwa Festival", "IDEX & NAVDEX (defence exhibition)": "IDEX",
     "Mubadala Abu Dhabi Open (tennis)": "Tennis Open", "Abu Dhabi International Book Fair": "Book Fair",
     "ADIPEC (energy exhibition)": "ADIPEC", "Abu Dhabi Championship (golf)": "Golf",

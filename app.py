@@ -8,6 +8,7 @@ import streamlit as st
 import style
 
 st.set_page_config(page_title="Abu Dhabi Visitor Insights", page_icon=":material/travel_explore:", layout="wide")
+style.theme_switch()
 style.apply()
 
 
@@ -20,7 +21,7 @@ def admin_login_details():
 
 def welcome():
     st.title("Abu Dhabi Visitor Insights", anchor=False)
-    st.markdown(f"<p style='color:{style.INK_2};font-size:1.0625rem;max-width:40rem;margin-top:-4px'>"
+    st.markdown("<p class='adh-muted' style='font-size:1.0625rem;max-width:40rem;margin-top:-4px'>"
                 "When Abu Dhabi is quiet or busy, and when the weather is best – for travelers planning a trip "
                 "and for DCT staff planning capacity</p>", unsafe_allow_html=True)
     st.write("")

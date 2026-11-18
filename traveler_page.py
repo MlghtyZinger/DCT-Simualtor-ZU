@@ -116,7 +116,9 @@ def spans(days: pd.DataFrame, name: str) -> str:
     out, start, prev = [], on[0], on[0]
     for d in on[1:] + [None]:
         if d is None or (d - prev).days > 1:
-            out.append(f"{start:%d %b}" if start == prev else f"{start:%d %b} – {prev:%d %b}")
+            out.append(f"{start.day} {start:%b}" if start == prev else
+                       (f"{start.day}–{prev.day} {prev:%b}" if start.month == prev.month
+                        else f"{start.day} {start:%b} – {prev.day} {prev:%b}"))
             start = d
         prev = d if d is not None else prev
     return ", ".join(out)
@@ -146,6 +148,64 @@ def next_months(n=12):
             break
         out.append((m, y))
     return out
+
+
+# ------------------------------------------------------------------------- calendar component
+def months_between(a, b):
+    out, d = [], date(a.year, a.month, 1)
+    while d <= b:
+        out.append((d.month, d.year))
+        d = (pd.Timestamp(d) + pd.offsets.MonthBegin(1)).date()
+    return out
+
+
+def _day_labels(ev):
+    names = list(dict.fromkeys(SHORT.get(e, e) for e in ev if e not in LONG))
+    if len(names) > 2:
+        names = names[:1] + [f"+{len(names) - 1} more"]
+    return "".join(f'<span class="e">{esc(n)}</span>' for n in names)
+
+
+def calendar_html(months, days: pd.DataFrame, focus=None, picks=None) -> str:
+    """Month grids. focus=(start, end) dims days outside it; picks=[(start, end), ...] numbers and outlines them."""
+    pick_of = {}
+    for i, (s, e) in enumerate(picks or [], 1):
+        for d in pd.date_range(s, e):
+            pick_of[d] = i
+    blocks = []
+    for m, y in months:
+        first = date(y, m, 1)
+        last = (pd.Timestamp(first) + pd.offsets.MonthEnd(0)).date()
+        a_, b_ = first, last
+        if focus is not None:                     # only the weeks that hold the chosen dates
+            a_ = max(first, focus[0] - timedelta(days=focus[0].weekday()))
+            b_ = min(last, focus[1] + timedelta(days=6 - focus[1].weekday()))
+        cells = [f'<span class="hd">{h}</span>' for h in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]]
+        cells += ['<span></span>'] * a_.weekday()
+        shown = []
+        for dd in pd.date_range(a_, b_):
+            d, k = dd, dd.day
+            if d.date() < TODAY or d not in days.index:
+                cells.append(f'<div class="adh-cell off"><span class="n">{k}</span></div>')
+                continue
+            r = days.loc[d]
+            inside = (focus is None or focus[0] <= d.date() <= focus[1]) and (picks is None or d in pick_of)
+            if not inside:
+                cells.append(f'<div class="adh-cell dim" title="{esc(r.Reason)}"><span class="n">{k}</span></div>')
+                continue
+            shown.append(d)
+            cls = f"adh-cell st-{r.Verdict}" + (" today" if d.date() == TODAY else "") + (" pick" if d in pick_of else "")
+            badge = (f'<span class="badge">{pick_of[d]}</span>'
+                     if d in pick_of and (d - pd.Timedelta(days=1)) not in pick_of else "")
+            tip = esc(f"{d:%a %d %b} · {r.Verdict} · {r.Reason}")
+            cells.append(f'<div class="{cls}" title="{tip}"><span class="n">{k}</span>{badge}{_day_labels(r.Events)}</div>')
+        # this month's events, written out in full under the grid
+        sub = days.loc[shown] if shown else days.iloc[0:0]
+        evs = event_names(sub) if len(sub) else []
+        lst = "".join(f"<li><b>{spans(sub, n)}</b> · {esc(n)}</li>" for n in evs)
+        blocks.append(f'<div class="adh-month"><h4>{MONTHS[m-1]} {y}</h4><div class="adh-grid">{"".join(cells)}</div>'
+                      + (f'<ul class="adh-mev">{lst}</ul>' if lst else "") + '</div>')
+    return '<div class="adh-months">' + "".join(blocks) + '</div>'
 
 
 # ------------------------------------------------------------------------- page
@@ -232,84 +292,82 @@ def all_countries():
 
 # 1. check my dates -----------------------------------------------------------------------
 DEFAULT_TRIP = (TODAY + timedelta(days=7), TODAY + timedelta(days=11))
+QUICK = ["This weekend", "Next week", "Next 2 weeks", "Next month"]
 
 
 def _clamp(s, e):
     return max(s, TODAY), min(e, END)
 
 
-def _quick(kind):
+def _range_for(kind):
     wd = TODAY.weekday()
-    if kind == "weekend":                       # coming Fri – Sun
+    if kind == "This weekend":                  # coming Fri – Sun
         fri = TODAY + timedelta(days=(4 - wd) % 7)
-        rng_ = (fri, fri + timedelta(days=2))
-    elif kind == "next_week":                   # next Mon – Sun
+        return fri, fri + timedelta(days=2)
+    if kind == "Next week":                     # next Mon – Sun
         mon = TODAY + timedelta(days=7 - wd)
-        rng_ = (mon, mon + timedelta(days=6))
-    elif kind == "two_weeks":
-        rng_ = (TODAY + timedelta(days=1), TODAY + timedelta(days=14))
-    elif kind == "next_month":
+        return mon, mon + timedelta(days=6)
+    if kind == "Next 2 weeks":
+        return TODAY + timedelta(days=1), TODAY + timedelta(days=14)
+    if kind == "Next month":
         first = (pd.Timestamp(TODAY) + pd.offsets.MonthBegin(1)).date()
-        rng_ = (first, (pd.Timestamp(first) + pd.offsets.MonthEnd(0)).date())
-    else:
-        rng_ = DEFAULT_TRIP
-    st.session_state.trip = _clamp(*rng_)
+        return first, (pd.Timestamp(first) + pd.offsets.MonthEnd(0)).date()
+    return DEFAULT_TRIP
 
 
-def tiles_html(days: pd.DataFrame) -> str:
-    out = ['<div class="adh-tiles">']
-    for d, r in days.iterrows():
-        s = STATUS[r.Verdict]
-        ev = f'<span class="adh-ev">{esc(r.Label)}</span>' if r.Label else ""
-        out.append(
-            f'<div class="adh-tile" style="background:{s["tint"]};border-color:transparent" title="{esc(r.Reason)}">'
-            f'<span class="dow">{d:%a}</span><span class="day">{d:%d %b}</span>'
-            f'<span class="st" style="color:{s["ink"]}">{dot(r.Verdict)}{r.Verdict}</span>'
-            f'<span class="tmp">{r.High}°C</span>{ev}</div>')
-    out.append('</div>')
-    return "".join(out)
+def _on_quick():
+    k = st.session_state.get("quick")
+    if k:
+        st.session_state.trip = _clamp(*_range_for(k))
+
+
+def _on_reset():
+    st.session_state.quick = None
+    st.session_state.trip = DEFAULT_TRIP
+
+
+def _on_dates():
+    st.session_state.quick = None
 
 
 with tab_dates:
     if "trip" not in st.session_state:
         st.session_state.trip = DEFAULT_TRIP
-    q = st.columns([1, 1, 1, 1, 1], gap="small")
-    q[0].button("This weekend", on_click=_quick, args=("weekend",), width="stretch")
-    q[1].button("Next week", on_click=_quick, args=("next_week",), width="stretch")
-    q[2].button("Next 2 weeks", on_click=_quick, args=("two_weeks",), width="stretch")
-    q[3].button("Next month", on_click=_quick, args=("next_month",), width="stretch")
-    q[4].button("Reset", on_click=_quick, args=("reset",), icon=":material/restart_alt:", width="stretch",
-                type="tertiary")
-    rng = st.date_input("Or pick your own dates", key="trip", min_value=TODAY, max_value=END, format="DD/MM/YYYY")
+    c1, c2, c3 = st.columns([3, 2, 0.6], vertical_alignment="bottom")
+    c1.segmented_control("Quick pick", QUICK, key="quick", on_change=_on_quick)
+    rng = c2.date_input("Or choose dates", key="trip", min_value=TODAY, max_value=END, format="DD/MM/YYYY",
+                        on_change=_on_dates)
+    c3.button("Reset", on_click=_on_reset, icon=":material/restart_alt:", type="tertiary")
     if isinstance(rng, (list, tuple)) and len(rng) == 2:
-        days = build_days(*rng)
+        s, e = rng
+        days = build_days(s, e)
         v = overall(days)
         msg = {"Go": "Mostly quiet with comfortable weather",
                "Okay": "Fine to go – expect some crowds or warm days",
                "Skip": "Consider other dates – busy and hot, or extremely hot"}[v]
+        cnt = days.Verdict.value_counts()
+        split = " · ".join(f"{cnt[k]} {k}" for k in ("Go", "Okay", "Skip") if k in cnt)
         src = ("live forecast" if (days.WeatherSource == "forecast").all() else
-               "live forecast for the next 2 weeks, typical after" if (days.WeatherSource == "forecast").any()
-               else "typical for this time of year")
+               "live, then typical" if (days.WeatherSource == "forecast").any() else "typical for the season")
+        evs = [n for n in event_names(days) if n not in LONG]
+        ev_sub = ", ".join(SHORT.get(n, n) for n in evs[:3]) + (f" +{len(evs) - 3}" if len(evs) > 3 else "")
+        when = f"{s:%a %d %b}" if s == e else f"{s:%a %d %b} – {e:%a %d %b %Y}"
         st.markdown(
-            f'<div class="adh-verdict"><span class="word" style="color:{STATUS[v]["ink"]}">{dot(v)}{v}</span>'
-            f'<span class="msg">{msg}</span></div>'
-            f'<div style="color:{style.INK_2};font-size:0.9375rem">{len(days)} days · '
-            f'{days.Low.min()}–{days.High.max()}°C ({src})</div>', unsafe_allow_html=True)
-        st.markdown(tiles_html(days), unsafe_allow_html=True)
-        st.caption("Events are marked on the days they happen. Point at a day for the full reason")
-        notes = event_names(days)
-        sch = list(dict.fromkeys(s for s in days.School if s))
-        short_ev = [n for n in notes if n not in LONG]
-        long_ev = [n for n in notes if n in LONG]
-        if short_ev:
-            st.markdown("**Holidays and events on your dates**\n\n" +
-                        "\n".join(f"- **{spans(days, n)}** · {NOTES[n]}" for n in short_ev))
-        if long_ev or sch:
-            st.markdown("**Also running during your trip**\n\n" +
-                        "\n".join([f"- **{spans(days, n)}** · {NOTES[n]}" for n in long_ev] +
-                                  [f"- {NOTES[s]}" for s in sch]))
+            '<div class="adh-summary">'
+            f'<div><div class="word ink-{v}">{dot(v)}{v}</div><div class="msg">{msg}</div></div>'
+            f'<div><div class="lab">Your dates</div><div class="val">{len(days)} days</div><div class="sub">{when}</div></div>'
+            f'<div><div class="lab">Temperature</div><div class="val">{days.Low.min()}–{days.High.max()}°C</div>'
+            f'<div class="sub">{src}</div></div>'
+            f'<div><div class="lab">Days</div><div class="val">{split}</div>'
+            f'<div class="sub">{"Events: " + ev_sub if evs else "No major events"}</div></div>'
+            '</div>', unsafe_allow_html=True)
+        st.markdown(calendar_html(months_between(s, e), days, focus=(s, e)), unsafe_allow_html=True)
+        sch = list(dict.fromkeys(x for x in days.School if x))
+        notes = [NOTES[n] for n in event_names(days)] + [NOTES[x] for x in sch]
+        with st.expander("What the holidays and events mean for your trip"):
+            st.markdown("\n".join(f"- {n}" for n in notes) if notes else "No holidays or events on these dates")
     else:
-        st.info("Pick an end date too")
+        st.info("Choose an end date too")
 
 # 1b. trip suggester ------------------------------------------------------------------------
 with tab_sugg:
@@ -329,47 +387,32 @@ with tab_sugg:
         if not wins:
             st.warning("Planning is available up to the end of 2027 – pick another month")
         else:
-            st.markdown(f"### Best dates around {pref} {y}")
-            for i, (s, w) in enumerate(wins, 1):
+            st.subheader(f"Best dates around {pref} {y}", anchor=False)
+            picks = [(s.date(), (s + pd.Timedelta(days=int(nights) - 1)).date()) for s, _ in wins]
+            lo_, hi_ = min(p_[0] for p_ in picks), max(p_[1] for p_ in picks)
+            span_days = build_days(max(date(lo_.year, lo_.month, 1), TODAY),
+                                   min((pd.Timestamp(hi_) + pd.offsets.MonthEnd(0)).date(), END))
+            st.markdown(calendar_html(months_between(lo_, hi_), span_days, picks=picks, focus=(lo_, hi_)),
+                        unsafe_allow_html=True)
+            rows_ = []
+            for i, ((s, w), (a_, b_)) in enumerate(zip(wins, picks), 1):
                 v = overall(w)
-                e = s + pd.Timedelta(days=int(nights) - 1)
-                st.markdown(f"{ICON[v]}<b>{s:%a %d %b} – {e:%a %d %b %Y}</b> · {window_reason(w)}",
-                            unsafe_allow_html=True)
+                rows_.append(f'<li><span class="badge-n">{i}</span>{dot(v)}<b>{a_:%a %d %b} – {b_:%a %d %b}</b>'
+                             f' · {esc(window_reason(w))}</li>')
+            st.markdown('<ul class="adh-picks">' + "".join(rows_) + '</ul>', unsafe_allow_html=True)
             if all(overall(w) == "Skip" for _, w in wins):
                 st.info("This month is busy or very hot. See Best times for better months")
             if SHOW_FLIGHT_TIP and home in fm:
                 empt, full = fm[home]
                 name = lambda ms: ", ".join(MONTHS[x - 1] for x in sorted(ms))
-                tip = f":material/flight: Flights from **{home}** are usually emptiest in {name(empt)} and fullest in {name(full)} (past years)."
+                tip = f":material/flight: Flights from **{home}** are usually emptiest in {name(empt)} and fullest in {name(full)} (past years)"
                 if m in full:
-                    tip += f" {pref} is a full month – book flights early."
+                    tip += f". {pref} is a full month – book flights early"
                 st.markdown(tip)
             st.caption("Suggestions are based on our crowd forecast and the weather – a guide, not a guarantee. "
-                       "No prices are included.")
+                       "No prices are included")
 
 # 2. calendar -----------------------------------------------------------------------------
-def month_html(m: int, y: int, days: pd.DataFrame) -> str:
-    first = date(y, m, 1)
-    n_days = (pd.Timestamp(first) + pd.offsets.MonthEnd(0)).day
-    out = [f'<div class="adh-month"><h4>{MONTHS[m-1]} {y}</h4><div class="adh-grid">']
-    out += [f'<span class="hd">{h}</span>' for h in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]]
-    out += ['<span></span>'] * first.weekday()
-    for k in range(1, n_days + 1):
-        d = pd.Timestamp(y, m, k)
-        if d.date() < TODAY or d not in days.index:
-            out.append(f'<div class="adh-cell past"><span class="n">{k}</span></div>')
-            continue
-        r = days.loc[d]
-        s = STATUS[r.Verdict]
-        today = " today" if d.date() == TODAY else ""
-        ev = f'<span class="e">{esc(r.Label)}</span>' if r.Label else ""
-        tip = esc(f"{d:%a %d %b} · {r.Verdict} · {r.Reason}")
-        out.append(f'<div class="adh-cell{today}" style="background:{s["tint"]};color:{s["ink"]}" title="{tip}">'
-                   f'<span class="n">{k}</span>{ev}</div>')
-    out.append('</div></div>')
-    return "".join(out)
-
-
 with tab_cal:
     n = st.segmented_control("Show", [3, 6, 9, 12], default=6, format_func=lambda x: f"{x} months",
                              key="cal_n") or 6
@@ -377,15 +420,9 @@ with tab_cal:
     last_m, last_y = months[-1]
     end = min((pd.Timestamp(last_y, last_m, 1) + pd.offsets.MonthEnd(0)).date(), END)
     cal = build_days(TODAY, end)
-    st.markdown('<div class="adh-months">' + "".join(month_html(m, y, cal) for m, y in months) + '</div>',
-                unsafe_allow_html=True)
-    st.caption("Point at a day for the reason. Days with a teal line have a holiday or event")
-    ev = {nm: (min(d for d, e in cal.Events.items() if nm in e), max(d for d, e in cal.Events.items() if nm in e))
-          for nm in event_names(cal)}
-    if ev:
-        st.markdown("**Holidays and events in this period**")
-        st.markdown("\n".join(f"- **{spans(cal, name)}** · {NOTES[name]}"
-                               for name, _ in sorted(ev.items(), key=lambda x: x[1][0])))
+    st.caption("Holidays and events are written on their days and listed in full under each month. "
+               "Point at a day for the reason behind its colour")
+    st.markdown(calendar_html(months, cal), unsafe_allow_html=True)
 
 # 3. best times ---------------------------------------------------------------------------
 with tab_best:
@@ -417,8 +454,9 @@ with tab_best:
     st.subheader(f"Month by month, {NEXT}", anchor=False)
     tbl = (bt.assign(High=bt.High.map(lambda x: f"{x}°C"))[["Month", "Verdict", "High", "Events"]]
              .rename(columns={"High": "Typical high"}))
-    st.dataframe(tbl.style.map(lambda v: f"background-color:{STATUS[v]['tint']};color:{STATUS[v]['ink']}",
-                               subset=["Verdict"]), hide_index=True, width="stretch")
+    _k = {"Go": "go", "Okay": "ok", "Skip": "sk"}
+    style.table(tbl.style.map(lambda v: f"background-color:var(--{_k[v]}-tint);color:var(--{_k[v]}-ink)",
+                              subset=["Verdict"]))
 
 # 4. ask -----------------------------------------------------------------------------------
 def answer(q: str) -> str:

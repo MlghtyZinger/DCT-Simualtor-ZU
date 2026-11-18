@@ -271,7 +271,7 @@ with tab_sim:
                                    text=[fmt(v, True) for v in pf["Extra"]], textposition="outside"))
             fig.update_layout(title="Same change, every month: extra guest nights", height=360,
                               yaxis_title="Guest nights", margin=dict(t=50, b=10))
-            st.plotly_chart(fig, width="stretch", theme=None)
+            style.chart(fig)
         else:
             st.info("This route doesn't operate in the other months.")
     with right:
@@ -292,7 +292,7 @@ with tab_sim:
         fig2.update_layout(barmode="overlay", title="Which lever matters most? Change in extra guest nights",
                            height=360, xaxis_title="vs. your scenario (guest nights)", margin=dict(t=50, b=10),
                            legend=dict(orientation="h", y=-0.2))
-        st.plotly_chart(fig2, width="stretch", theme=None)
+        style.chart(fig2)
         st.caption("Each bar moves one lever across a plausible range, leaving the others where you set them.")
 
 # =========================================================================== OVERVIEW
@@ -305,7 +305,7 @@ with tab_over:
         fig.add_bar(x=MONTHS, y=[dom_fc.get(x, 0) for x in MONTHS], name="Domestic", marker_color=GREY)
         fig.update_layout(barmode="stack", height=340, title="International + domestic", yaxis_title="Guest nights",
                           margin=dict(t=50, b=10), legend=dict(orientation="h", y=-0.15))
-        st.plotly_chart(fig, width="stretch", theme=None)
+        style.chart(fig)
     with b:
         d2 = dom.copy()
         d2["Date"] = pd.to_datetime(d2["Month"] + "-01")
@@ -315,7 +315,7 @@ with tab_over:
             fig.add_scatter(x=s["Date"], y=s["Guest_Nights"], name=t, mode="lines+markers", line=dict(color=colr))
         fig.update_layout(height=340, title="Domestic: history and forecast", yaxis_title="Guest nights",
                           margin=dict(t=50, b=10), legend=dict(orientation="h", y=-0.15))
-        st.plotly_chart(fig, width="stretch", theme=None)
+        style.chart(fig)
     st.caption("Domestic demand is held constant in every scenario: international flights don't change it.")
 
     tot = link.groupby("Nationality").agg(Guest_Nights=("Guest_Nights", "sum"), Seats=("Seats", "sum"),
@@ -327,15 +327,13 @@ with tab_over:
         st.markdown("**Largest source markets (7-month guest nights)**")
         top = tot.sort_values("Guest_Nights", ascending=False).head(12).copy()
         top["Direct flights"] = np.where(top["Direct"], "Yes", "No")
-        st.dataframe(top[["Nationality", "Guest_Nights", "Share", "Direct flights"]]
-                     .style.format({"Guest_Nights": "{:,.0f}", "Share": "{:.1%}"}),
-                     hide_index=True, width="stretch")
+        style.table(top[["Nationality", "Guest_Nights", "Share", "Direct flights"]]
+                     .style.format({"Guest_Nights": "{:,.0f}", "Share": "{:.1%}"}))
     with b:
         st.markdown("**Markets with no direct flight: candidates for new routes**")
         nf = tot[~tot["Direct"]].sort_values("Guest_Nights", ascending=False)
-        st.dataframe(nf[["Nationality", "Guest_Nights", "Share"]]
-                     .style.format({"Guest_Nights": "{:,.0f}", "Share": "{:.1%}"}),
-                     hide_index=True, width="stretch")
+        style.table(nf[["Nationality", "Guest_Nights", "Share"]]
+                     .style.format({"Guest_Nights": "{:,.0f}", "Share": "{:.1%}"}))
 
     st.markdown("**Hotel guest nights per available seat (markets with direct flights)**")
     ps = tot[tot["Direct"] & (tot["Seats"] > 0)].copy()
@@ -343,7 +341,7 @@ with tab_over:
     ps = ps.sort_values("Per_Seat", ascending=True).tail(20)
     fig = go.Figure(go.Bar(x=ps["Per_Seat"], y=ps["Nationality"].str.title(), orientation="h", marker_color=BLUE))
     fig.update_layout(height=520, xaxis_title="Guest nights per seat", margin=dict(t=10, b=10))
-    st.plotly_chart(fig, width="stretch", theme=None)
+    style.chart(fig)
     st.caption("Top 20. A seat on a flight from the top markets fills far more hotel nights than a seat from a hub or Gulf market.")
 
 # =========================================================================== NOTES

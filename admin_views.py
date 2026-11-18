@@ -47,23 +47,22 @@ def render_forecast():
     fig.add_scatter(x=_agg(lgf, level).index, y=_agg(lgf, level), name="LightGBM forecast", line_color=C["LightGBM"])
     fig.update_layout(height=380, margin=dict(t=10, b=10), yaxis_title="Guests per night",
                       legend=dict(orientation="h", y=1.08), hovermode="x unified")
-    st.plotly_chart(fig, width="stretch", theme=None)
+    style.chart(fig)
 
     yr = st.selectbox("Busiest periods in", [2026, 2027], index=1, key="lg_year")
     s = lgf[lgf.index.year == yr]
     a, b, c = st.columns(3)
     a.markdown("**Top days**")
-    a.dataframe(s.nlargest(10).rename("Guests").reset_index().assign(Date=lambda d: d.Date.dt.strftime("%a %d %b"))
-                .style.format({"Guests": "{:,.0f}"}), hide_index=True, width="stretch")
+    style.table(a, s.nlargest(10).rename("Guests").reset_index().assign(Date=lambda d: d.Date.dt.strftime("%a %d %b"))
+                .style.format({"Guests": "{:,.0f}"}))
     wk = s.resample("W-MON", label="left", closed="left").mean()
     b.markdown("**Top weeks** (week starting)")
-    b.dataframe(wk.nlargest(10).rename("Guests").reset_index().assign(Date=lambda d: d.Date.dt.strftime("%d %b"))
-                .style.format({"Guests": "{:,.0f}"}), hide_index=True, width="stretch")
+    style.table(b, wk.nlargest(10).rename("Guests").reset_index().assign(Date=lambda d: d.Date.dt.strftime("%d %b"))
+                .style.format({"Guests": "{:,.0f}"}))
     mo = s.resample("MS").mean()
     c.markdown("**Months, busiest first**")
-    c.dataframe(mo.sort_values(ascending=False).rename("Guests").reset_index()
-                .assign(Date=lambda d: d.Date.dt.strftime("%B")).style.format({"Guests": "{:,.0f}"}),
-                hide_index=True, width="stretch")
+    style.table(c, mo.sort_values(ascending=False).rename("Guests").reset_index()
+                .assign(Date=lambda d: d.Date.dt.strftime("%B")).style.format({"Guests": "{:,.0f}"}))
 
 
 # --------------------------------------------------------------------------------------------
@@ -76,9 +75,8 @@ def render_compare():
         f"Both models were trained on Jan 2022 – Dec 2024 with the **same information** (calendar, weekends, holidays, "
         f"events) and tested on **Jan – Jul 2025**. Lower error is better. "
         f"On this test **{best}** was more accurate; both beat the simple *same day last year* guess.")
-    st.dataframe(met.style.format({c: "{:.1f}%" for c in met.columns if "%" in c})
-                 .highlight_min(subset=[c for c in met.columns if "%" in c], color="#d1fae5"),
-                 hide_index=True, width="stretch")
+    style.table(met.style.format({c: "{:.1f}%" for c in met.columns if "%" in c})
+                 .highlight_min(subset=[c for c in met.columns if "%" in c], props="font-weight:600;color:var(--accent)"))
     level = st.radio("View", ["Daily", "Weekly", "Monthly"], index=1, horizontal=True, key="cmp_level")
     fig = go.Figure()
     for col in ["Actual", "LightGBM", "Prophet", "Same day last year"]:
@@ -87,7 +85,7 @@ def render_compare():
                                                              width=3 if col == "Actual" else 2))
     fig.update_layout(height=360, margin=dict(t=10, b=10), yaxis_title="Guests per night",
                       legend=dict(orientation="h", y=1.1), hovermode="x unified")
-    st.plotly_chart(fig, width="stretch", theme=None)
+    style.chart(fig)
 
     st.markdown("**Forecasts to Dec 2027 (monthly average)**")
     fig2 = go.Figure()
@@ -98,7 +96,7 @@ def render_compare():
         fig2.add_scatter(x=s.index, y=s, name=t, line_color=C[col])
     fig2.update_layout(height=340, margin=dict(t=10, b=10), yaxis_title="Guests per night",
                        legend=dict(orientation="h", y=1.1), hovermode="x unified")
-    st.plotly_chart(fig2, width="stretch", theme=None)
+    style.chart(fig2)
     st.caption("Why LightGBM is the main model: it is the model the team built and tuned, it follows holidays and "
                "weekends closely, and with same-day arrivals it reaches about 3.5% daily error. Prophet is kept as a "
                "check. Both models carry the past growth trend forward, so forecasts far ahead may be too high.")
@@ -128,14 +126,14 @@ def render_flights():
                            marker_color=[style.ACCENT if m == v.LF.idxmax() else style.NEUTRAL_SERIES for m in range(1, 13)],
                            hovertemplate="%{x}: %{y:.0f}% full<extra></extra>"))
     fig.update_layout(height=320, margin=dict(t=10, b=10), yaxis=dict(title="Seats filled (%)", range=[0, 105]))
-    st.plotly_chart(fig, width="stretch", theme=None)
+    style.chart(fig)
     if (c.LF > 1).any():
         st.caption("Some months show more passengers than seats in the raw data; shown capped at 100%.")
     if g.loc[ctry, "Seats / month"] < 3000:
         st.warning("Few seats on this route – percentages jump around a lot.")
     st.markdown("**All countries**")
-    st.dataframe(g.sort_values("Seats", ascending=False)[["Seats / month", "Seats filled"]].reset_index()
-                 .style.format({"Seats / month": "{:,.0f}", "Seats filled": "{:.0%}"}), hide_index=True, width="stretch")
+    style.table(g.sort_values("Seats", ascending=False)[["Seats / month", "Seats filled"]].reset_index()
+                 .style.format({"Seats / month": "{:,.0f}", "Seats filled": "{:.0%}"}))
 
 
 # --------------------------------------------------------------------------------------------
@@ -163,10 +161,9 @@ def render_profiles():
     fig = go.Figure(go.Bar(x=MONTHS, y=share * 100, marker_color=[style.ACCENT if m == share.idxmax() else style.NEUTRAL_SERIES for m in range(1, 13)],
                            hovertemplate="%{x}: %{y:.1f}% of their nights<extra></extra>"))
     fig.update_layout(height=300, margin=dict(t=10, b=10), yaxis_title="% of their hotel nights")
-    st.plotly_chart(fig, width="stretch", theme=None)
+    style.chart(fig)
     st.markdown("**All nationalities**")
-    st.dataframe(tot.sort_values("Nights", ascending=False)
+    style.table(tot.sort_values("Nights", ascending=False)
                  [["Avg stay (nights)", "Share of nights", "Top month", "Quietest month"]].reset_index()
                  .assign(Nationality=lambda d: d.Nationality.str.title())
-                 .style.format({"Avg stay (nights)": "{:.1f}", "Share of nights": "{:.1%}"}),
-                 hide_index=True, width="stretch")
+                 .style.format({"Avg stay (nights)": "{:.1f}", "Share of nights": "{:.1%}"}))
