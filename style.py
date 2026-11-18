@@ -147,6 +147,26 @@ button[kind="primary"] p, button[kind="primaryFormSubmit"] p { color: #0B1F1E !i
 [data-testid="stSlider"] [data-testid="stSliderThumbValue"], [data-testid="stTickBarMin"], [data-testid="stTickBarMax"] { color: var(--accent) !important; }
 [data-testid="stExpander"] details { border-color: var(--line) !important; background: var(--card); }
 hr { border-color: var(--line) !important; }
+[data-testid="stTextInputRootElement"], [data-testid="stTextInput"] [data-baseweb="input"] { background-color: var(--raised) !important; border-color: var(--line) !important; }
+[data-testid="stMetricDelta"] { background-color: var(--raised) !important; color: var(--ink2) !important; }
+[data-testid="stMetricDelta"] svg { color: var(--ink2) !important; }
+pre, code, [data-testid="stCode"] { background-color: var(--raised) !important; color: var(--ink) !important; }
+[data-testid="stExpander"] summary, [data-testid="stExpander"] summary:hover, [data-testid="stExpander"] summary:focus,
+[data-testid="stExpander"] summary:focus-visible { background-color: var(--card) !important; color: var(--ink) !important; }
+[data-testid="stExpander"] summary *, [data-testid="stExpander"] summary svg { color: var(--ink) !important; }
+[data-testid="stDateInputCalendar"] { background-color: var(--card) !important; color: var(--ink) !important; border-color: var(--line) !important; }
+[data-testid="stDateInputCalendar"] select { background-color: var(--raised) !important; color: var(--ink) !important; border-color: var(--line) !important; }
+[data-testid="stDateInputCalendar"] [role="gridcell"], [data-testid="stDateInputCalendar"] th,
+[data-testid="stDateInputCalendar"] button, [data-testid="stDateInputCalendar"] svg { color: var(--ink); }
+[data-testid="stDateInputCalendar"] [data-disabled="true"], [data-testid="stDateInputCalendar"] [data-outside-month="true"] { color: var(--ink3) !important; opacity: 0.6; }
+[data-testid="stDateInputCalendar"] [role="gridcell"] [role="button"]:not([data-disabled="true"]):not([data-selected="true"]) { color: var(--ink); }
+/* top-right toolbar (Share, star, edit, GitHub, menu) */
+[data-testid="stToolbar"], [data-testid="stToolbar"] *, [data-testid="stToolbarActions"] *, [data-testid="stMainMenu"] *,
+[data-testid="stAppDeployButton"] *, [data-testid="stHeader"] button, [data-testid="stHeader"] a { color: var(--ink) !important; }
+[data-testid="stToolbar"] svg, [data-testid="stHeader"] svg { color: var(--ink) !important; }
+[data-testid="stToolbar"] button:hover, [data-testid="stHeader"] button:hover { background-color: var(--raised) !important; }
+[data-testid="stMainMenuPopover"], [data-testid="stMainMenuList"] { background-color: var(--card) !important; color: var(--ink) !important; }
+[role="radiogroup"] label > div:first-child:not([class*="checked"]) { border-color: var(--ink3); }
 """
 
 

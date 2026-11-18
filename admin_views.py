@@ -30,10 +30,9 @@ def _agg(s: pd.Series, level: str) -> pd.Series:
 # --------------------------------------------------------------------------------------------
 def render_forecast():
     fc, _, met, _, _ = _load()
-    st.subheader("Hotel guests forecast – LightGBM (main model)")
-    st.caption("Total hotel guests per night (international + domestic). Actual to Jul 2025, LightGBM forecast to Dec 2027. "
-               "The model uses only things known ahead of time: calendar, weekends, holidays, events and the growth trend. "
-               "It assumes past growth continues, so 2027 values may be too high – use them for timing (which periods are busiest), not exact totals.")
+    st.subheader("Hotel guests forecast", anchor=False)
+    st.caption("Hotel guests per night, international + domestic. Actual to Jul 2025, forecast to Dec 2027. "
+               "Estimates – 2027 may run high, so use them for timing rather than exact totals")
     lg = met.set_index("Method").loc["LightGBM"]
     k = st.columns(3)
     k[0].metric("Daily error (Jan–Jul 2025 test)", f"{lg['Daily error %']}%")
@@ -68,7 +67,7 @@ def render_forecast():
 # --------------------------------------------------------------------------------------------
 def render_compare():
     fc, cmp_, met, _, _ = _load()
-    st.subheader("LightGBM vs Prophet")
+    st.subheader("LightGBM vs Prophet", anchor=False)
     m = met.set_index("Method")
     best = m["Daily error %"].idxmin()
     st.markdown(
@@ -97,17 +96,14 @@ def render_compare():
     fig2.update_layout(height=340, margin=dict(t=10, b=10), yaxis_title="Guests per night",
                        legend=dict(orientation="h", y=1.1), hovermode="x unified")
     style.chart(fig2)
-    st.caption("Why LightGBM is the main model: it is the model the team built and tuned, it follows holidays and "
-               "weekends closely, and with same-day arrivals it reaches about 3.5% daily error. Prophet is kept as a "
-               "check. Both models carry the past growth trend forward, so forecasts far ahead may be too high.")
+    st.caption("LightGBM stays the main model; Prophet is shown for comparison. Both may overestimate far ahead")
 
 
 # --------------------------------------------------------------------------------------------
 def render_flights():
     _, _, _, fl, _ = _load()
-    st.subheader("Flight fullness by departure country")
-    st.caption("Seats filled = passengers ÷ seats, all airlines, flights to Abu Dhabi, average of 2023 – Feb 2026. "
-               "Historical only – the data has no fares or seat availability.")
+    st.subheader("Flight fullness by country", anchor=False)
+    st.caption("Seats filled = passengers ÷ seats, all airlines, 2023 – Feb 2026. Past data only, no fares")
     g = fl.groupby("Country").agg(Seats=("Seats", "sum"), PAX=("PAX", "sum"), Months=("Month", "nunique"))
     g["Seats filled"] = g.PAX / g.Seats
     g["Seats / month"] = g.Seats / g.Months
@@ -128,7 +124,7 @@ def render_flights():
     fig.update_layout(height=320, margin=dict(t=10, b=10), yaxis=dict(title="Seats filled (%)", range=[0, 105]))
     style.chart(fig)
     if (c.LF > 1).any():
-        st.caption("Some months show more passengers than seats in the raw data; shown capped at 100%.")
+        st.caption("Capped at 100% where the data shows more passengers than seats")
     if g.loc[ctry, "Seats / month"] < 3000:
         st.warning("Few seats on this route – percentages jump around a lot.")
     st.markdown("**All countries**")
@@ -139,9 +135,8 @@ def render_flights():
 # --------------------------------------------------------------------------------------------
 def render_profiles():
     _, _, _, _, nat = _load()
-    st.subheader("Visitor profiles by nationality")
-    st.caption("International hotel guests, 2023 – Jul 2025. Stay = hotel nights ÷ check-ins (approximate). "
-               "Hotel guests only; nationality is not the same as the country flown from.")
+    st.subheader("Visitor profiles", anchor=False)
+    st.caption("International hotel guests, 2023 – Jul 2025. Stay length is approximate")
     allstay = nat.Nights.sum() / nat.Arrivals.sum()
     tot = nat.groupby("Nationality").agg(Nights=("Nights", "sum"), Arrivals=("Arrivals", "sum"))
     tot["Avg stay (nights)"] = tot.Nights / tot.Arrivals

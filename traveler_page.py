@@ -216,6 +216,7 @@ LEGEND = ('<div class="adh-legend">'
           f'<span>{dot("Okay")}<b>Okay</b> · a bit busy or warm</span>'
           f'<span>{dot("Skip")}<b>Skip</b> · busy and hot, or over 40°C</span></div>')
 st.markdown(LEGEND, unsafe_allow_html=True)
+st.caption(":material/info: Estimates only – crowds, weather and event dates may not be fully accurate")
 
 tab_dates, tab_sugg, tab_cal, tab_best, tab_ask = st.tabs(
     [":material/event: Check my dates", ":material/route: Trip suggester", ":material/calendar_month: Calendar",
@@ -364,19 +365,18 @@ with tab_dates:
         st.markdown(calendar_html(months_between(s, e), days, focus=(s, e)), unsafe_allow_html=True)
         sch = list(dict.fromkeys(x for x in days.School if x))
         notes = [NOTES[n] for n in event_names(days)] + [NOTES[x] for x in sch]
-        with st.expander("What the holidays and events mean for your trip"):
+        with st.expander("About these events"):
             st.markdown("\n".join(f"- {n}" for n in notes) if notes else "No holidays or events on these dates")
     else:
         st.info("Choose an end date too")
 
 # 1b. trip suggester ------------------------------------------------------------------------
 with tab_sugg:
-    st.markdown("Tell us about your trip and we'll suggest the best dates")
     fm = flight_months()
     with st.form("suggester"):
         c = st.columns(3)
         home = c[0].selectbox("Home country", ["Prefer not to say"] + all_countries(),
-                              help="Used only to add a tip about flights from your country, when we have flight data for it.")
+                              help="Only used for a flight tip")
         pref = c[1].selectbox("Preferred month", MONTHS, index=TODAY.month % 12)
         nights = c[2].number_input("Trip length (nights)", 1, 21, 5)
         sent = st.form_submit_button("Suggest dates", type="primary")
@@ -409,8 +409,6 @@ with tab_sugg:
                 if m in full:
                     tip += f". {pref} is a full month – book flights early"
                 st.markdown(tip)
-            st.caption("Suggestions are based on our crowd forecast and the weather – a guide, not a guarantee. "
-                       "No prices are included")
 
 # 2. calendar -----------------------------------------------------------------------------
 with tab_cal:
@@ -420,8 +418,7 @@ with tab_cal:
     last_m, last_y = months[-1]
     end = min((pd.Timestamp(last_y, last_m, 1) + pd.offsets.MonthEnd(0)).date(), END)
     cal = build_days(TODAY, end)
-    st.caption("Holidays and events are written on their days and listed in full under each month. "
-               "Point at a day for the reason behind its colour")
+    st.caption("Point at a day for details")
     st.markdown(calendar_html(months, cal), unsafe_allow_html=True)
 
 # 3. best times ---------------------------------------------------------------------------
@@ -441,7 +438,6 @@ with tab_best:
     # best = coolest weather first; months packed with big events (3 or more) are left out
     best = bt[bt.Big.map(len) < 3].sort_values(["High", "Go"], ascending=[True, False]).head(3)
     st.subheader(f"Best months in {NEXT}", anchor=False)
-    st.caption("Chosen for the most pleasant weather, leaving out months packed with big events")
     for r in best.itertuples():
         why = f"about {r.High}°C, pleasant weather"
         if r.Big:
@@ -500,8 +496,7 @@ def answer(q: str) -> str:
 
 
 with tab_ask:
-    st.caption("Simple answers from our forecast and the weather. Try: When is the best time to visit? · "
-               "How is March? · What's on? · Will it be crowded in December? · Ramadan · Weather")
+    st.caption("Try: Best time to visit? · How is March? · What's on? · Is December busy?")
     if "chat" not in st.session_state:
         st.session_state.chat = [("assistant", "Ask me when to visit Abu Dhabi")]
     box = st.container()
@@ -512,5 +507,4 @@ with tab_ask:
         for role, msg in st.session_state.chat:
             st.chat_message(role).markdown(msg, unsafe_allow_html=True)
 
-st.caption("Crowd levels: our LightGBM forecast from Abu Dhabi hotel history and holiday calendars – a guide, not a "
-           "guarantee. Weather: Open-Meteo. Ramadan, Eid and school holiday dates are approximate")
+st.caption("Weather data: Open-Meteo")

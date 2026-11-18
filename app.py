@@ -21,21 +21,19 @@ def admin_login_details():
 
 def welcome():
     st.title("Abu Dhabi Visitor Insights", anchor=False)
-    st.markdown("<p class='adh-muted' style='font-size:1.0625rem;max-width:40rem;margin-top:-4px'>"
-                "When Abu Dhabi is quiet or busy, and when the weather is best – for travelers planning a trip "
-                "and for DCT staff planning capacity</p>", unsafe_allow_html=True)
+    st.markdown("<p class='adh-muted' style='font-size:1.0625rem;margin-top:-4px'>"
+                "Crowds, weather and events in Abu Dhabi at a glance</p>", unsafe_allow_html=True)
     st.write("")
     left, right = st.columns(2, gap="large")
 
-    with left, st.container(border=True, height=300):
+    with left, st.container(border=True, height=280):
         st.subheader(":material/luggage: Plan a trip", anchor=False)
-        st.write("Check your dates, see a crowd calendar for the coming months, get suggested dates "
-                 "and ask simple questions. No account needed")
+        st.write("See how busy and how hot your dates will be. No account needed")
         st.write("")
         if st.button("Continue as guest", type="primary", icon=":material/arrow_forward:"):
             st.switch_page(traveler)
 
-    with right, st.container(border=True, height=300):
+    with right, st.container(border=True, height=280):
         st.subheader(":material/lock: DCT staff", anchor=False)
         if st.session_state.get("is_admin"):
             st.write("You are signed in")
@@ -57,11 +55,7 @@ def welcome():
             else:
                 st.error("Wrong username or password")
 
-    st.write("")
-    c = st.columns(3)
-    c[0].metric("Crowd forecast", "to Dec 2027", border=False)
-    c[1].metric("Live weather", "next 16 days", border=False)
-    c[2].metric("Holidays and events", "tracked daily", border=False)
+    st.caption(":material/info: Crowd levels and weather are estimates and may not be fully accurate")
 
 
 home = st.Page(welcome, title="Welcome", icon=":material/home:", default=True)

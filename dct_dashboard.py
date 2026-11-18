@@ -66,8 +66,7 @@ def fmt(x, signed=False):
 # --------------------------------------------------------------------------- header
 style.apply()
 st.title("Flight to hotel guest simulator", anchor=False)
-st.caption("What happens to hotel guest nights if flights change? Baseline = our forecast for Aug 2025 – Feb 2026. "
-           "Every step of the chain is visible and adjustable")
+st.caption("How flight changes affect hotel guest nights. Baseline: Aug 2025 – Feb 2026 forecast")
 
 import admin_views as av
 
@@ -293,7 +292,7 @@ with tab_sim:
                            height=360, xaxis_title="vs. your scenario (guest nights)", margin=dict(t=50, b=10),
                            legend=dict(orientation="h", y=-0.2))
         style.chart(fig2)
-        st.caption("Each bar moves one lever across a plausible range, leaving the others where you set them.")
+        st.caption("Each bar changes one setting and keeps the rest")
 
 # =========================================================================== OVERVIEW
 with tab_over:
@@ -316,7 +315,7 @@ with tab_over:
         fig.update_layout(height=340, title="Domestic: history and forecast", yaxis_title="Guest nights",
                           margin=dict(t=50, b=10), legend=dict(orientation="h", y=-0.15))
         style.chart(fig)
-    st.caption("Domestic demand is held constant in every scenario: international flights don't change it.")
+    st.caption("Domestic demand stays the same in every scenario")
 
     tot = link.groupby("Nationality").agg(Guest_Nights=("Guest_Nights", "sum"), Seats=("Seats", "sum"),
                                           Direct=("Has_Direct_Flight", "any")).reset_index()
@@ -342,7 +341,7 @@ with tab_over:
     fig = go.Figure(go.Bar(x=ps["Per_Seat"], y=ps["Nationality"].str.title(), orientation="h", marker_color=BLUE))
     fig.update_layout(height=520, xaxis_title="Guest nights per seat", margin=dict(t=10, b=10))
     style.chart(fig)
-    st.caption("Top 20. A seat on a flight from the top markets fills far more hotel nights than a seat from a hub or Gulf market.")
+    st.caption("Top 20 markets")
 
 # =========================================================================== NOTES
 with tab_notes:
