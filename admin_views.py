@@ -5,9 +5,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import style
+
 DATA = Path(__file__).parent / "data"
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-C = {"Actual": "#1f2937", "LightGBM": "#2563eb", "Prophet": "#f59e0b", "Same day last year": "#9ca3af"}
+C = {"Actual": style.INK, "LightGBM": style.ACCENT, "Prophet": "#9A8F80", "Same day last year": "#CFC8BC"}
 
 
 @st.cache_data
@@ -45,7 +47,7 @@ def render_forecast():
     fig.add_scatter(x=_agg(lgf, level).index, y=_agg(lgf, level), name="LightGBM forecast", line_color=C["LightGBM"])
     fig.update_layout(height=380, margin=dict(t=10, b=10), yaxis_title="Guests per night",
                       legend=dict(orientation="h", y=1.08), hovermode="x unified")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width="stretch", theme=None)
 
     yr = st.selectbox("Busiest periods in", [2026, 2027], index=1, key="lg_year")
     s = lgf[lgf.index.year == yr]
@@ -85,7 +87,7 @@ def render_compare():
                                                              width=3 if col == "Actual" else 2))
     fig.update_layout(height=360, margin=dict(t=10, b=10), yaxis_title="Guests per night",
                       legend=dict(orientation="h", y=1.1), hovermode="x unified")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width="stretch", theme=None)
 
     st.markdown("**Forecasts to Dec 2027 (monthly average)**")
     fig2 = go.Figure()
@@ -96,7 +98,7 @@ def render_compare():
         fig2.add_scatter(x=s.index, y=s, name=t, line_color=C[col])
     fig2.update_layout(height=340, margin=dict(t=10, b=10), yaxis_title="Guests per night",
                        legend=dict(orientation="h", y=1.1), hovermode="x unified")
-    st.plotly_chart(fig2, width="stretch")
+    st.plotly_chart(fig2, width="stretch", theme=None)
     st.caption("Why LightGBM is the main model: it is the model the team built and tuned, it follows holidays and "
                "weekends closely, and with same-day arrivals it reaches about 3.5% daily error. Prophet is kept as a "
                "check. Both models carry the past growth trend forward, so forecasts far ahead may be too high.")
@@ -123,10 +125,10 @@ def render_flights():
     k[2].metric("Seats per month (avg)", f"{g.loc[ctry, 'Seats / month']:,.0f}")
     lf = c.LF.clip(upper=1)
     fig = go.Figure(go.Bar(x=MONTHS, y=lf * 100, customdata=c.Seats,
-                           marker_color="#2563eb",
+                           marker_color=[style.ACCENT if m == v.LF.idxmax() else style.NEUTRAL_SERIES for m in range(1, 13)],
                            hovertemplate="%{x}: %{y:.0f}% full<extra></extra>"))
     fig.update_layout(height=320, margin=dict(t=10, b=10), yaxis=dict(title="Seats filled (%)", range=[0, 105]))
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width="stretch", theme=None)
     if (c.LF > 1).any():
         st.caption("Some months show more passengers than seats in the raw data; shown capped at 100%.")
     if g.loc[ctry, "Seats / month"] < 3000:
@@ -158,10 +160,10 @@ def render_profiles():
     k[1].metric("Busiest month", r["Top month"])
     k[2].metric("Share of all international nights", f"{r['Share of nights']:.1%}")
     share = bym.loc[who] / bym.loc[who].sum()
-    fig = go.Figure(go.Bar(x=MONTHS, y=share * 100, marker_color="#2563eb",
+    fig = go.Figure(go.Bar(x=MONTHS, y=share * 100, marker_color=[style.ACCENT if m == share.idxmax() else style.NEUTRAL_SERIES for m in range(1, 13)],
                            hovertemplate="%{x}: %{y:.1f}% of their nights<extra></extra>"))
     fig.update_layout(height=300, margin=dict(t=10, b=10), yaxis_title="% of their hotel nights")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width="stretch", theme=None)
     st.markdown("**All nationalities**")
     st.dataframe(tot.sort_values("Nights", ascending=False)
                  [["Avg stay (nights)", "Share of nights", "Top month", "Quietest month"]].reset_index()

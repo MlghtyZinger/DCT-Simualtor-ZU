@@ -11,6 +11,9 @@ import plotly.graph_objects as go
 import requests
 import streamlit as st
 
+import style
+from style import STATUS, dot, esc
+
 from calendar_ad import NOTES, LAST_DAY, MAJOR, SHORT, LONG, events_on
 
 DATA = Path(__file__).parent / "data"
@@ -20,7 +23,7 @@ END = LAST_DAY.date()
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
           "September", "October", "November", "December"]
 COLOR = {"Go": "#2f9e44", "Okay": "#f2c12e", "Skip": "#e03131"}
-ICON = {"Go": "🟢", "Okay": "🟡", "Skip": "🔴"}
+ICON = {k: dot(k) for k in ("Go", "Okay", "Skip")}   # small coloured dot (HTML)
 # fallback typical highs/lows (°C) if the weather service can't be reached
 TYPICAL = {1: (24, 14), 2: (26, 15), 3: (29, 18), 4: (34, 22), 5: (39, 26), 6: (41, 29),
            7: (42, 31), 8: (42, 31), 9: (40, 28), 10: (36, 24), 11: (31, 19), 12: (26, 16)}
@@ -146,11 +149,17 @@ def next_months(n=12):
 
 
 # ------------------------------------------------------------------------- page
-st.title("🧳 Plan your Abu Dhabi trip")
-st.caption("🟢 **Go** – quiet and comfortable · 🟡 **Okay** – a bit busy or warm · 🔴 **Skip** – busy and hot, or over 40°C")
+style.apply()
+st.title("Plan your Abu Dhabi trip", anchor=False)
+LEGEND = ('<div class="adh-legend">'
+          f'<span>{dot("Go")}<b>Go</b> · quiet and comfortable</span>'
+          f'<span>{dot("Okay")}<b>Okay</b> · a bit busy or warm</span>'
+          f'<span>{dot("Skip")}<b>Skip</b> · busy and hot, or over 40°C</span></div>')
+st.markdown(LEGEND, unsafe_allow_html=True)
 
 tab_dates, tab_sugg, tab_cal, tab_best, tab_ask = st.tabs(
-    ["📅 Check my dates", "🎯 Trip suggester", "🗓️ Calendar", "⭐ Best times", "💬 Ask a question"])
+    [":material/event: Check my dates", ":material/route: Trip suggester", ":material/calendar_month: Calendar",
+     ":material/wb_sunny: Best times", ":material/chat_bubble: Ask a question"])
 
 # Trip suggester: show a words-only flight tip for the home country (no numbers).
 # Set to False to hide it if DCT flight data should not be used on the public side.
@@ -208,7 +217,7 @@ def window_reason(w: pd.DataFrame) -> str:
     crowd = ("mostly quiet" if busy.get("Quiet", 0) >= 0.5 else
              "some busy days" if busy.get("Busy", 0) >= 0.3 else "normal crowds")
     hi = f"{w.High.min()}°C" if w.High.min() == w.High.max() else f"{w.High.min()}–{w.High.max()}°C"
-    ev = event_names(w)
+    ev = [n for n in event_names(w) if n not in LONG]
     sch = sorted({s for s in w.School if s})
     extra = ("includes " + ", ".join(ev)) if ev else (sch[0] + " (approx.)") if sch else "no major holidays"
     return f"{crowd.capitalize()}, highs {hi}, {extra}."
@@ -222,49 +231,89 @@ def all_countries():
 
 
 # 1. check my dates -----------------------------------------------------------------------
+DEFAULT_TRIP = (TODAY + timedelta(days=7), TODAY + timedelta(days=11))
+
+
+def _clamp(s, e):
+    return max(s, TODAY), min(e, END)
+
+
+def _quick(kind):
+    wd = TODAY.weekday()
+    if kind == "weekend":                       # coming Fri – Sun
+        fri = TODAY + timedelta(days=(4 - wd) % 7)
+        rng_ = (fri, fri + timedelta(days=2))
+    elif kind == "next_week":                   # next Mon – Sun
+        mon = TODAY + timedelta(days=7 - wd)
+        rng_ = (mon, mon + timedelta(days=6))
+    elif kind == "two_weeks":
+        rng_ = (TODAY + timedelta(days=1), TODAY + timedelta(days=14))
+    elif kind == "next_month":
+        first = (pd.Timestamp(TODAY) + pd.offsets.MonthBegin(1)).date()
+        rng_ = (first, (pd.Timestamp(first) + pd.offsets.MonthEnd(0)).date())
+    else:
+        rng_ = DEFAULT_TRIP
+    st.session_state.trip = _clamp(*rng_)
+
+
+def tiles_html(days: pd.DataFrame) -> str:
+    out = ['<div class="adh-tiles">']
+    for d, r in days.iterrows():
+        s = STATUS[r.Verdict]
+        ev = f'<span class="adh-ev">{esc(r.Label)}</span>' if r.Label else ""
+        out.append(
+            f'<div class="adh-tile" style="background:{s["tint"]};border-color:transparent" title="{esc(r.Reason)}">'
+            f'<span class="dow">{d:%a}</span><span class="day">{d:%d %b}</span>'
+            f'<span class="st" style="color:{s["ink"]}">{dot(r.Verdict)}{r.Verdict}</span>'
+            f'<span class="tmp">{r.High}°C</span>{ev}</div>')
+    out.append('</div>')
+    return "".join(out)
+
+
 with tab_dates:
-    s0 = TODAY + timedelta(days=7)
-    rng = st.date_input("When are you travelling?", (s0, s0 + timedelta(days=4)),
-                        min_value=TODAY, max_value=END, format="DD/MM/YYYY")
+    if "trip" not in st.session_state:
+        st.session_state.trip = DEFAULT_TRIP
+    q = st.columns([1, 1, 1, 1, 1], gap="small")
+    q[0].button("This weekend", on_click=_quick, args=("weekend",), width="stretch")
+    q[1].button("Next week", on_click=_quick, args=("next_week",), width="stretch")
+    q[2].button("Next 2 weeks", on_click=_quick, args=("two_weeks",), width="stretch")
+    q[3].button("Next month", on_click=_quick, args=("next_month",), width="stretch")
+    q[4].button("Reset", on_click=_quick, args=("reset",), icon=":material/restart_alt:", width="stretch",
+                type="tertiary")
+    rng = st.date_input("Or pick your own dates", key="trip", min_value=TODAY, max_value=END, format="DD/MM/YYYY")
     if isinstance(rng, (list, tuple)) and len(rng) == 2:
         days = build_days(*rng)
         v = overall(days)
-        msg = {"Go": "Great choice – mostly quiet with comfortable weather.",
-               "Okay": "Fine to go – expect some crowds or warm days.",
-               "Skip": "Consider other dates – it will be busy and hot, or extremely hot."}[v]
-        st.markdown(f"## {ICON[v]} {v}\n{msg}")
-        st.markdown(f"Weather: **{days.Low.min()}–{days.High.max()}°C**"
-                    + (" (live forecast)" if (days.WeatherSource == "forecast").all() else
-                       " (live forecast for the next 2 weeks, typical weather after)"
-                       if (days.WeatherSource == "forecast").any() else " (typical for this time of year)"))
-        strip = go.Figure(go.Bar(x=days.index, y=[1] * len(days), marker_color=days.Verdict.map(COLOR),
-                                 text=days.Label, textposition="inside", insidetextanchor="middle",
-                                 textangle=-90 if len(days) > 7 else 0,
-                                 textfont=dict(color="#111111", size=13), cliponaxis=False,
-                                 customdata=days[["Verdict", "Reason"]],
-                                 hovertemplate="%{x|%a %d %b}<br><b>%{customdata[0]}</b><br>%{customdata[1]}<extra></extra>"))
-        strip.update_layout(height=260, margin=dict(t=5, b=5, l=5, r=5), yaxis_visible=False,
-                            uniformtext=dict(minsize=9, mode="show"),
-                            bargap=0.08, xaxis=dict(tickformat="%a %d %b", dtick=86400000.0 if len(days) <= 21 else 7 * 86400000.0))
-        st.plotly_chart(strip, width="stretch")
-        st.caption("Holidays and events are written on the days they happen. Hover a day for more details.")
+        msg = {"Go": "Mostly quiet with comfortable weather",
+               "Okay": "Fine to go – expect some crowds or warm days",
+               "Skip": "Consider other dates – busy and hot, or extremely hot"}[v]
+        src = ("live forecast" if (days.WeatherSource == "forecast").all() else
+               "live forecast for the next 2 weeks, typical after" if (days.WeatherSource == "forecast").any()
+               else "typical for this time of year")
+        st.markdown(
+            f'<div class="adh-verdict"><span class="word" style="color:{STATUS[v]["ink"]}">{dot(v)}{v}</span>'
+            f'<span class="msg">{msg}</span></div>'
+            f'<div style="color:{style.INK_2};font-size:0.9375rem">{len(days)} days · '
+            f'{days.Low.min()}–{days.High.max()}°C ({src})</div>', unsafe_allow_html=True)
+        st.markdown(tiles_html(days), unsafe_allow_html=True)
+        st.caption("Events are marked on the days they happen. Point at a day for the full reason")
         notes = event_names(days)
         sch = list(dict.fromkeys(s for s in days.School if s))
         short_ev = [n for n in notes if n not in LONG]
         long_ev = [n for n in notes if n in LONG]
         if short_ev:
             st.markdown("**Holidays and events on your dates**\n\n" +
-                        "\n".join(f"- **{spans(days, n)}:** {NOTES[n]}" for n in short_ev))
+                        "\n".join(f"- **{spans(days, n)}** · {NOTES[n]}" for n in short_ev))
         if long_ev or sch:
             st.markdown("**Also running during your trip**\n\n" +
-                        "\n".join([f"- **{spans(days, n)}:** {NOTES[n]}" for n in long_ev] +
+                        "\n".join([f"- **{spans(days, n)}** · {NOTES[n]}" for n in long_ev] +
                                   [f"- {NOTES[s]}" for s in sch]))
     else:
-        st.info("Pick a start date and an end date.")
+        st.info("Pick an end date too")
 
 # 1b. trip suggester ------------------------------------------------------------------------
 with tab_sugg:
-    st.markdown("Tell us a little about your trip and we'll suggest the best dates.")
+    st.markdown("Tell us about your trip and we'll suggest the best dates")
     fm = flight_months()
     with st.form("suggester"):
         c = st.columns(3)
@@ -278,19 +327,20 @@ with tab_sugg:
         m = MONTHS.index(pref) + 1
         y, wins = suggest_windows(m, int(nights))
         if not wins:
-            st.warning("I can only plan up to the end of 2027 – please pick another month.")
+            st.warning("Planning is available up to the end of 2027 – pick another month")
         else:
             st.markdown(f"### Best dates around {pref} {y}")
             for i, (s, w) in enumerate(wins, 1):
                 v = overall(w)
                 e = s + pd.Timedelta(days=int(nights) - 1)
-                st.markdown(f"**{i}. {ICON[v]} {s:%a %d %b} → {e:%a %d %b %Y}** — {window_reason(w)}")
+                st.markdown(f"{ICON[v]}<b>{s:%a %d %b} – {e:%a %d %b %Y}</b> · {window_reason(w)}",
+                            unsafe_allow_html=True)
             if all(overall(w) == "Skip" for _, w in wins):
-                st.info("This month is busy and/or very hot. See ⭐ Best times for better months.")
+                st.info("This month is busy or very hot. See Best times for better months")
             if SHOW_FLIGHT_TIP and home in fm:
                 empt, full = fm[home]
                 name = lambda ms: ", ".join(MONTHS[x - 1] for x in sorted(ms))
-                tip = f"✈️ Flights from **{home}** are usually emptiest in {name(empt)} and fullest in {name(full)} (past years)."
+                tip = f":material/flight: Flights from **{home}** are usually emptiest in {name(empt)} and fullest in {name(full)} (past years)."
                 if m in full:
                     tip += f" {pref} is a full month – book flights early."
                 st.markdown(tip)
@@ -298,34 +348,43 @@ with tab_sugg:
                        "No prices are included.")
 
 # 2. calendar -----------------------------------------------------------------------------
+def month_html(m: int, y: int, days: pd.DataFrame) -> str:
+    first = date(y, m, 1)
+    n_days = (pd.Timestamp(first) + pd.offsets.MonthEnd(0)).day
+    out = [f'<div class="adh-month"><h4>{MONTHS[m-1]} {y}</h4><div class="adh-grid">']
+    out += [f'<span class="hd">{h}</span>' for h in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]]
+    out += ['<span></span>'] * first.weekday()
+    for k in range(1, n_days + 1):
+        d = pd.Timestamp(y, m, k)
+        if d.date() < TODAY or d not in days.index:
+            out.append(f'<div class="adh-cell past"><span class="n">{k}</span></div>')
+            continue
+        r = days.loc[d]
+        s = STATUS[r.Verdict]
+        today = " today" if d.date() == TODAY else ""
+        ev = f'<span class="e">{esc(r.Label)}</span>' if r.Label else ""
+        tip = esc(f"{d:%a %d %b} · {r.Verdict} · {r.Reason}")
+        out.append(f'<div class="adh-cell{today}" style="background:{s["tint"]};color:{s["ink"]}" title="{tip}">'
+                   f'<span class="n">{k}</span>{ev}</div>')
+    out.append('</div></div>')
+    return "".join(out)
+
+
 with tab_cal:
-    n = st.select_slider("Show", options=[3, 6, 9, 12], value=6, format_func=lambda x: f"{x} months")
-    end = min((pd.Timestamp(TODAY) + pd.DateOffset(months=n)).date(), END)
+    n = st.segmented_control("Show", [3, 6, 9, 12], default=6, format_func=lambda x: f"{x} months",
+                             key="cal_n") or 6
+    months = next_months(n)
+    last_m, last_y = months[-1]
+    end = min((pd.Timestamp(last_y, last_m, 1) + pd.offsets.MonthEnd(0)).date(), END)
     cal = build_days(TODAY, end)
-    cal["dow"] = cal.index.dayofweek
-    cal["week"] = cal.index - pd.to_timedelta(cal.dow, unit="D")
-    weeks = sorted(cal.week.unique())
-    code = {"Go": 0, "Okay": 1, "Skip": 2}
-    z = [[None] * len(weeks) for _ in range(7)]
-    txt = [[""] * len(weeks) for _ in range(7)]
-    for d, r in cal.iterrows():
-        j = weeks.index(r.week)
-        z[r.dow][j] = code[r.Verdict]
-        txt[r.dow][j] = f"{d:%a %d %b %Y}<br><b>{ICON[r.Verdict]} {r.Verdict}</b><br>{r.Reason}"
-    fig = go.Figure(go.Heatmap(
-        z=z, x=weeks, y=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], text=txt,
-        hovertemplate="%{text}<extra></extra>", xgap=3, ygap=3, zmin=0, zmax=2, showscale=False,
-        colorscale=[[0, COLOR["Go"]], [0.33, COLOR["Go"]], [0.34, COLOR["Okay"]], [0.66, COLOR["Okay"]],
-                    [0.67, COLOR["Skip"]], [1, COLOR["Skip"]]]))
-    fig.update_layout(height=300, margin=dict(t=10, b=10), yaxis_autorange="reversed",
-                      xaxis=dict(tickformat="%d %b", title="Week starting"))
-    st.plotly_chart(fig, width="stretch")
-    st.caption("🟢 Go · 🟡 Okay · 🔴 Skip — hover a day to see why.")
-    ev = {n: (min(d for d, e in cal.Events.items() if n in e), max(d for d, e in cal.Events.items() if n in e))
-          for n in event_names(cal)}
+    st.markdown('<div class="adh-months">' + "".join(month_html(m, y, cal) for m, y in months) + '</div>',
+                unsafe_allow_html=True)
+    st.caption("Point at a day for the reason. Days with a teal line have a holiday or event")
+    ev = {nm: (min(d for d, e in cal.Events.items() if nm in e), max(d for d, e in cal.Events.items() if nm in e))
+          for nm in event_names(cal)}
     if ev:
         st.markdown("**Holidays and events in this period**")
-        st.markdown("\n".join(f"- **{spans(cal, name)}:** {NOTES[name]}"
+        st.markdown("\n".join(f"- **{spans(cal, name)}** · {NOTES[name]}"
                                for name, _ in sorted(ev.items(), key=lambda x: x[1][0])))
 
 # 3. best times ---------------------------------------------------------------------------
@@ -344,28 +403,29 @@ with tab_best:
     bt = pd.DataFrame(rows)
     # best = coolest weather first; months packed with big events (3 or more) are left out
     best = bt[bt.Big.map(len) < 3].sort_values(["High", "Go"], ascending=[True, False]).head(3)
-    st.markdown(f"### Best months in {NEXT}")
-    st.caption("Chosen for the most pleasant weather, leaving out months packed with big events.")
+    st.subheader(f"Best months in {NEXT}", anchor=False)
+    st.caption("Chosen for the most pleasant weather, leaving out months packed with big events")
     for r in best.itertuples():
         why = f"about {r.High}°C, pleasant weather"
         if r.Big:
             why += f"; busy during {', '.join(SHORT.get(b, b) for b in r.Big)} – book early"
-        st.markdown(f"{ICON[r.Verdict]} **{r.Month}** – {why}")
+        st.markdown(f"{ICON[r.Verdict]}<b>{r.Month}</b> · {why}", unsafe_allow_html=True)
     crowded = bt[bt.Big.map(len) >= 3]
     for r in crowded.itertuples():
         st.info(f"**{r.Month}** also has good weather (about {r.High}°C), but {', '.join(SHORT.get(b, b) for b in r.Big)} "
-                "make it one of the busiest months.")
-    st.markdown(f"### Month by month, {NEXT}")
-    st.dataframe(bt.assign(Verdict=bt.Verdict.map(lambda v: f"{ICON[v]} {v}"),
-                           High=bt.High.map(lambda x: f"{x}°C"))[["Month", "Verdict", "High", "Events"]]
-                 .rename(columns={"High": "Typical high"}), hide_index=True, width="stretch")
+                "make it one of the busiest months")
+    st.subheader(f"Month by month, {NEXT}", anchor=False)
+    tbl = (bt.assign(High=bt.High.map(lambda x: f"{x}°C"))[["Month", "Verdict", "High", "Events"]]
+             .rename(columns={"High": "Typical high"}))
+    st.dataframe(tbl.style.map(lambda v: f"background-color:{STATUS[v]['tint']};color:{STATUS[v]['ink']}",
+                               subset=["Verdict"]), hide_index=True, width="stretch")
 
 # 4. ask -----------------------------------------------------------------------------------
 def answer(q: str) -> str:
     t = q.lower()
     month = next((i + 1 for i, m in enumerate(MONTHS) if m.lower() in t or re.search(rf"\b{m[:3].lower()}\b", t)), None)
     if any(k in t for k in ["price", "cheap", "cost", "fare", "expensive", "ticket"]):
-        return "I can't see prices. Quieter (🟢) dates are often easier to book, but that's not guaranteed."
+        return "I can't see prices. Quieter (Go) dates are often easier to book, but that's not guaranteed."
     if month:
         y = TODAY.year if month >= TODAY.month else TODAY.year + 1
         md = month_days(month, y)
@@ -402,17 +462,17 @@ def answer(q: str) -> str:
 
 
 with tab_ask:
-    st.caption("Simple answers from our forecast and the weather. Try: *When is the best time to visit?* · "
-               "*How is March?* · *What's on?* · *Will it be crowded in December?* · *Ramadan* · *Weather*")
+    st.caption("Simple answers from our forecast and the weather. Try: When is the best time to visit? · "
+               "How is March? · What's on? · Will it be crowded in December? · Ramadan · Weather")
     if "chat" not in st.session_state:
-        st.session_state.chat = [("assistant", "Hi! Ask me when to visit Abu Dhabi.")]
+        st.session_state.chat = [("assistant", "Ask me when to visit Abu Dhabi")]
     box = st.container()
     q = st.chat_input("Type your question")
     if q:
         st.session_state.chat += [("user", q), ("assistant", answer(q))]
     with box:
         for role, msg in st.session_state.chat:
-            st.chat_message(role).markdown(msg)
+            st.chat_message(role).markdown(msg, unsafe_allow_html=True)
 
 st.caption("Crowd levels: our LightGBM forecast from Abu Dhabi hotel history and holiday calendars – a guide, not a "
-           "guarantee. Weather: Open-Meteo. Ramadan/Eid dates are approximate; school holidays are approximate.")
+           "guarantee. Weather: Open-Meteo. Ramadan, Eid and school holiday dates are approximate")

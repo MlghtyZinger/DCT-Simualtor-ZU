@@ -9,7 +9,8 @@ import streamlit as st
 from engine import run_chain
 
 DATA = Path(__file__).resolve().parent / "data"
-BLUE, GREY, ORANGE, GREEN = "#2563eb", "#8a94a6", "#d9480f", "#2f9e44"
+import style
+BLUE, GREY, ORANGE, GREEN = style.ACCENT, style.NEUTRAL_SERIES, "#C8583F", "#2E8B6F"   # teal accent, sand neutral
 AIRCRAFT = {"A320 (~180 seats)": 180, "A321neo (~220)": 220, "Boeing 787-9 (~290)": 290,
             "Boeing 777-300ER (~350)": 350, "Airbus A380 (~480)": 480}
 
@@ -63,15 +64,18 @@ def fmt(x, signed=False):
 
 
 # --------------------------------------------------------------------------- header
-st.title("✈️ Flight → Hotel Guest Simulator · Abu Dhabi")
+style.apply()
+st.title("Flight to hotel guest simulator", anchor=False)
 st.caption("What happens to hotel guest nights if flights change? Baseline = our forecast for Aug 2025 – Feb 2026. "
-           "Every step of the chain is visible and adjustable.")
+           "Every step of the chain is visible and adjustable")
 
 import admin_views as av
 
-_names = (["🎛️ Scenario simulator", "📈 LightGBM forecast", "⚖️ LightGBM vs Prophet", "📊 Market overview",
-           "✈️ Flight fullness", "👥 Visitor profiles"]
-          + (["📉 Prophet detail (comparison)"] if ts_view else []) + ["ℹ️ Method & limits"])
+_names = ([":material/tune: Scenario simulator", ":material/show_chart: LightGBM forecast",
+            ":material/compare_arrows: LightGBM vs Prophet", ":material/bar_chart: Market overview",
+            ":material/flight: Flight fullness", ":material/groups: Visitor profiles"]
+          + ([":material/timeline: Prophet detail (comparison)"] if ts_view else [])
+          + [":material/info: Method and limits"])
 _tabs = st.tabs(_names)
 tab_sim, tab_over, tab_notes = _tabs[0], _tabs[3], _tabs[-1]
 for _tab, _fn in [(_tabs[1], av.render_forecast), (_tabs[2], av.render_compare),
@@ -94,7 +98,8 @@ with tab_sim:
                     horizontal=True)
 
     c1, c2 = st.columns([1, 3])
-    month = c1.selectbox("Month", MONTHS, index=MONTHS.index("2025-12") if "2025-12" in MONTHS else 0)
+    month = c1.selectbox("Month", MONTHS, index=MONTHS.index("2025-12") if "2025-12" in MONTHS else 0,
+                         format_func=lambda m: pd.Timestamp(m + "-01").strftime("%b %Y"))
     d = days_in(month)
 
     # ---------------------------------------------------------------- MODE A: existing route
@@ -114,7 +119,7 @@ with tab_sim:
         b_tr = float(route["Transfer"]) / b_pax if b_pax else 0.0
         b_ts = float(route["Transit"]) / b_pax if b_pax else 0.0
 
-        st.markdown(f"##### Baseline · {airline}, {city} → Abu Dhabi · {month}")
+        st.subheader(f"Baseline · {airline}, {city} to Abu Dhabi · {pd.Timestamp(month + '-01'):%b %Y}", anchor=False)
         m = st.columns(5)
         m[0].metric("Seats / month", fmt(b_seats))
         m[1].metric("Load factor", f"{b_lf:.0%}")
@@ -122,7 +127,7 @@ with tab_sim:
         m[3].metric(f"{country} hotel guest nights", fmt(nat_nights))
         m[4].metric("Check-ins per P2P passenger", f"{yield0:.2f}")
 
-        st.markdown("##### Scenario controls")
+        st.subheader("Scenario controls", anchor=False)
         k = st.columns(3)
         freq_pct = k[0].slider("Flight frequency change", -100, 200, 0, 5, format="%+d%%",
                                help="+50% = one and a half times as many flights. −100% = route cancelled.")
@@ -186,7 +191,7 @@ with tab_sim:
         mkt_tr = min(max(mkt_tr, 0.0), 0.9)
         mkt_lf = min(max(mkt_lf, 0.3), 1.2)
 
-        st.markdown(f"##### Baseline · {nat.title()} · {month}")
+        st.subheader(f"Baseline · {nat.title()} · {pd.Timestamp(month + '-01'):%b %Y}", anchor=False)
         m = st.columns(4)
         m[0].metric("Hotel guest nights (forecast)", fmt(nat_nights))
         m[1].metric("Direct flights today", "Yes" if has_flights else "None in the data")
@@ -196,7 +201,7 @@ with tab_sim:
             st.info(f"{nat.title()} has **no direct flights** in the flight data, so there's no market-specific check-in "
                     f"ratio. The simulator uses the median across all markets ({GLOBAL_YIELD:.2f}). Treat this as an assumption.")
 
-        st.markdown("##### Scenario controls")
+        st.subheader("Scenario controls", anchor=False)
         k = st.columns(3)
         weekly = k[0].slider("Extra flights per week", 0, 28, 2, 1,
                              help="2 = a new twice-weekly service. 14 = twice daily.")
@@ -232,7 +237,7 @@ with tab_sim:
     extra_checkins = scen_chain.checkins - base_chain.checkins
     total_base = float(intl_total.get(month, 0) + dom_fc.get(month, 0))
 
-    st.markdown("##### Result")
+    st.subheader("Result", anchor=False)
     r = st.columns(4)
     r[0].metric("Extra seats / month", fmt(scen_chain.seats - base_chain.seats, True))
     r[1].metric("Extra P2P visitors", fmt(scen_chain.p2p - base_chain.p2p, True))
@@ -266,7 +271,7 @@ with tab_sim:
                                    text=[fmt(v, True) for v in pf["Extra"]], textposition="outside"))
             fig.update_layout(title="Same change, every month: extra guest nights", height=360,
                               yaxis_title="Guest nights", margin=dict(t=50, b=10))
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, width="stretch", theme=None)
         else:
             st.info("This route doesn't operate in the other months.")
     with right:
@@ -287,7 +292,7 @@ with tab_sim:
         fig2.update_layout(barmode="overlay", title="Which lever matters most? Change in extra guest nights",
                            height=360, xaxis_title="vs. your scenario (guest nights)", margin=dict(t=50, b=10),
                            legend=dict(orientation="h", y=-0.2))
-        st.plotly_chart(fig2, width="stretch")
+        st.plotly_chart(fig2, width="stretch", theme=None)
         st.caption("Each bar moves one lever across a plausible range, leaving the others where you set them.")
 
 # =========================================================================== OVERVIEW
@@ -300,7 +305,7 @@ with tab_over:
         fig.add_bar(x=MONTHS, y=[dom_fc.get(x, 0) for x in MONTHS], name="Domestic", marker_color=GREY)
         fig.update_layout(barmode="stack", height=340, title="International + domestic", yaxis_title="Guest nights",
                           margin=dict(t=50, b=10), legend=dict(orientation="h", y=-0.15))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, width="stretch", theme=None)
     with b:
         d2 = dom.copy()
         d2["Date"] = pd.to_datetime(d2["Month"] + "-01")
@@ -310,7 +315,7 @@ with tab_over:
             fig.add_scatter(x=s["Date"], y=s["Guest_Nights"], name=t, mode="lines+markers", line=dict(color=colr))
         fig.update_layout(height=340, title="Domestic: history and forecast", yaxis_title="Guest nights",
                           margin=dict(t=50, b=10), legend=dict(orientation="h", y=-0.15))
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, width="stretch", theme=None)
     st.caption("Domestic demand is held constant in every scenario: international flights don't change it.")
 
     tot = link.groupby("Nationality").agg(Guest_Nights=("Guest_Nights", "sum"), Seats=("Seats", "sum"),
@@ -338,7 +343,7 @@ with tab_over:
     ps = ps.sort_values("Per_Seat", ascending=True).tail(20)
     fig = go.Figure(go.Bar(x=ps["Per_Seat"], y=ps["Nationality"].str.title(), orientation="h", marker_color=BLUE))
     fig.update_layout(height=520, xaxis_title="Guest nights per seat", margin=dict(t=10, b=10))
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width="stretch", theme=None)
     st.caption("Top 20. A seat on a flight from the top markets fills far more hotel nights than a seat from a hub or Gulf market.")
 
 # =========================================================================== NOTES
