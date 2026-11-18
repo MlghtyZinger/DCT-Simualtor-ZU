@@ -60,7 +60,7 @@ def typical_weather():
         j = r.json()["daily"]
         w = pd.DataFrame({"High": j["temperature_2m_max"], "Low": j["temperature_2m_min"]},
                          index=pd.to_datetime(j["time"]))
-        w = w.groupby(w.index.dayofyear).mean()
+        w = w.groupby(w.index.day_of_year).mean()
         w = pd.concat([w.tail(15), w, w.head(15)]).rolling(31, center=True).mean().iloc[15:-15]
         return w.round(0)
     except Exception:
@@ -75,7 +75,7 @@ def build_days(start, end) -> pd.DataFrame:
         if live is not None and d in live.index:
             hi.append(live.High[d]); lo.append(live.Low[d]); src.append("forecast")
         elif typ is not None:
-            doy = min(d.dayofyear, 365)
+            doy = min(d.day_of_year, 365)
             hi.append(typ.High[doy]); lo.append(typ.Low[doy]); src.append("typical")
         else:
             hi.append(TYPICAL[d.month][0]); lo.append(TYPICAL[d.month][1]); src.append("typical")
@@ -334,8 +334,8 @@ def _on_dates():
 with tab_dates:
     if "trip" not in st.session_state:
         st.session_state.trip = DEFAULT_TRIP
-    c1, c2, c3 = st.columns([3, 2, 0.6], vertical_alignment="bottom")
-    c1.segmented_control("Quick pick", QUICK, key="quick", on_change=_on_quick)
+    st.segmented_control("Quick pick", QUICK, key="quick", on_change=_on_quick)
+    c2, c3, _sp = st.columns([2, 1, 2], vertical_alignment="bottom")
     rng = c2.date_input("Or choose dates", key="trip", min_value=TODAY, max_value=END, format="DD/MM/YYYY",
                         on_change=_on_dates)
     c3.button("Reset", on_click=_on_reset, icon=":material/restart_alt:", type="tertiary")

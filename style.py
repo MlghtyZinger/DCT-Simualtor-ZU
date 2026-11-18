@@ -164,6 +164,11 @@ pre, code, [data-testid="stCode"] { background-color: var(--raised) !important; 
 [data-testid="stToolbar"], [data-testid="stToolbar"] *, [data-testid="stToolbarActions"] *, [data-testid="stMainMenu"] *,
 [data-testid="stAppDeployButton"] *, [data-testid="stHeader"] button, [data-testid="stHeader"] a { color: var(--ink) !important; }
 [data-testid="stToolbar"] svg, [data-testid="stHeader"] svg { color: var(--ink) !important; }
+[data-testid="stToolbarActionButtonIcon"], [data-testid="stToolbarActionButton"] img,
+[data-testid="stToolbarActionButton"] svg { filter: invert(1) brightness(1.15) !important; opacity: 1 !important; }
+[data-testid="stToolbarActionButton"] button, [data-testid="stToolbar"] button[kind="headerButton"],
+[data-testid="stToolbar"] button[kind="header"] { background-color: transparent !important; opacity: 1 !important; }
+[data-testid="stToolbarActionButton"] button:hover { background-color: var(--raised) !important; }
 [data-testid="stToolbar"] button:hover, [data-testid="stHeader"] button:hover { background-color: var(--raised) !important; }
 [data-testid="stMainMenuPopover"], [data-testid="stMainMenuList"] { background-color: var(--card) !important; color: var(--ink) !important; }
 [role="radiogroup"] label > div:first-child:not([class*="checked"]) { border-color: var(--ink3); }

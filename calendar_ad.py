@@ -121,11 +121,11 @@ def features(dates) -> pd.DataFrame:
     """Only things known ahead of time: calendar, weekends, holidays, events."""
     d = pd.DatetimeIndex(dates)
     f = pd.DataFrame(index=d)
-    f["dow"] = d.dayofweek
+    f["dow"] = d.day_of_week
     f["month"] = d.month
-    f["doy"] = d.dayofyear
+    f["doy"] = d.day_of_year
     f["year"] = d.year
-    f["weekend"] = d.dayofweek.isin([4, 5]).astype(int)
+    f["weekend"] = d.day_of_week.isin([4, 5]).astype(int)
     ev = [event_on(x) for x in d]
     for i, name in enumerate(EVENTS):
         f[f"ev_{i}"] = [int(e == name) for e in ev]
